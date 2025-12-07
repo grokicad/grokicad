@@ -5,7 +5,7 @@ use axum::{
 };
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::services::git;
 use crate::types::{ApiError, HookUpdateResponse};
@@ -47,6 +47,20 @@ pub async fn update_repo(
         )
     })?;
 
+    info!(
+        "Found {} commits with schematic changes for repo: {}",
+        commits.len(),
+        repo
+    );
+    for (idx, commit) in commits.iter().enumerate() {
+        info!(
+            "  Commit {}: {} - {:?}",
+            idx + 1,
+            &commit.commit_hash[..8.min(commit.commit_hash.len())],
+            commit.message
+        );
+    }
+
     let mut processed = 0;
     let mut errors = Vec::new();
 
@@ -61,6 +75,17 @@ pub async fn update_repo(
             .as_ref()
             .map(|s| s.blurb.is_none() || s.description.is_none())
             .unwrap_or(true);
+
+        info!(
+            "Commit {} needs_processing={}, existing={:?}",
+            &commit_info.commit_hash[..8.min(commit_info.commit_hash.len())],
+            needs_processing,
+            existing.as_ref().map(|s| format!(
+                "blurb={}, desc={}",
+                s.blurb.is_some(),
+                s.description.is_some()
+            ))
+        );
 
         if needs_processing {
             match generate_and_store_overview(
@@ -82,11 +107,34 @@ pub async fn update_repo(
                 }
                 Err(e) => {
                     let err_msg = format!("Commit {}: {}", commit_info.commit_hash, e);
+                    // Check for rate limiting
+                    if e.to_string().contains("429")
+                        || e.to_string().to_lowercase().contains("rate")
+                    {
+                        error!(
+                            "RATE LIMITED while processing commit {}: {}",
+                            commit_info.commit_hash, e
+                        );
+                        warn!("XAI API rate limit hit! Stopping further processing.");
+                        errors.push(format!("RATE LIMITED: {}", err_msg));
+                        // Break out of the loop to avoid hitting more rate limits
+                        break;
+                    }
                     error!("Failed to generate overview: {}", err_msg);
                     errors.push(err_msg);
                 }
             }
         }
+    }
+
+    info!(
+        "Hook processing complete for {}: processed={}, errors={}",
+        repo,
+        processed,
+        errors.len()
+    );
+    if !errors.is_empty() {
+        warn!("Errors during processing: {:?}", errors);
     }
 
     Ok(Json(HookUpdateResponse {

@@ -77,9 +77,7 @@ impl XaiClient {
         &self,
         request: &ChatCompletionRequest,
     ) -> Result<ChatCompletionResponse, Box<dyn std::error::Error>> {
-        let client = reqwest::Client::builder()
-            .timeout(self.timeout)
-            .build()?;
+        let client = reqwest::Client::builder().timeout(self.timeout).build()?;
 
         let response = client
             .post(&self.base_url)
@@ -91,8 +89,27 @@ impl XaiClient {
 
         if !response.status().is_success() {
             let status = response.status();
-            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-            return Err(format!("API request failed with status {}: {}", status, error_text).into());
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+
+            // Check specifically for rate limiting
+            if status.as_u16() == 429 {
+                eprintln!(
+                    "ERROR: XAI API RATE LIMITED (429)! Response: {}",
+                    error_text
+                );
+                return Err(format!(
+                    "RATE LIMITED: XAI API returned 429. Response: {}",
+                    error_text
+                )
+                .into());
+            }
+
+            return Err(
+                format!("API request failed with status {}: {}", status, error_text).into(),
+            );
         }
 
         let completion_response: ChatCompletionResponse = response.json().await?;
@@ -125,7 +142,10 @@ mod tests {
         println!("=== XAI Client Configuration ===");
         println!("Base URL: {}", client.base_url());
         println!("Timeout: {} seconds", client.timeout().as_secs());
-        println!("API Key loaded: {}...", &client.api_key[..client.api_key.len().min(10)]);
+        println!(
+            "API Key loaded: {}...",
+            &client.api_key[..client.api_key.len().min(10)]
+        );
 
         assert_eq!(client.base_url(), DEFAULT_XAI_API_URL);
         assert_eq!(client.timeout().as_secs(), DEFAULT_TIMEOUT_SECONDS);
@@ -164,8 +184,10 @@ mod tests {
                     }
                 }
                 if let Some(usage) = &resp.usage {
-                    println!("Usage - Prompt tokens: {:?}, Completion tokens: {:?}, Total: {:?}",
-                        usage.prompt_tokens, usage.completion_tokens, usage.total_tokens);
+                    println!(
+                        "Usage - Prompt tokens: {:?}, Completion tokens: {:?}, Total: {:?}",
+                        usage.prompt_tokens, usage.completion_tokens, usage.total_tokens
+                    );
                 }
             }
             Err(e) => {
@@ -204,7 +226,7 @@ mod tests {
                 println!("Response ID: {:?}", resp.id);
                 println!("Model: {:?}", resp.model);
                 println!("Created: {:?}", resp.created);
-                
+
                 for (idx, choice) in resp.choices.iter().enumerate() {
                     println!("\nChoice {}:", idx);
                     println!("  Index: {:?}", choice.index);
@@ -214,7 +236,7 @@ mod tests {
                         println!("  Content: {:?}", msg.content);
                     }
                 }
-                
+
                 if let Some(usage) = &resp.usage {
                     println!("\nToken Usage:");
                     println!("  Prompt tokens: {:?}", usage.prompt_tokens);
