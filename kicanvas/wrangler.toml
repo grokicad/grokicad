@@ -1,7 +1,0 @@
-name = "grokicad"
-compatibility_date = "2024-12-01"
-
-# Static assets configuration for Cloudflare Pages
-[assets]
-directory = "./debug"
-
