@@ -11,13 +11,13 @@ use kicad_db::{retrieve_schematic, PgPool};
 
 pub type AppState = Arc<PgPool>;
 
-/// Get all commits that modified .kicad_sch files
+/// Get all commits (with flag indicating schematic changes)
 #[utoipa::path(
     post,
     path = "/api/repo/commits",
     request_body = RepoCommitsRequest,
     responses(
-        (status = 200, description = "List of commits with schematic changes", body = RepoCommitsResponse),
+        (status = 200, description = "List of all commits with schematic change flags", body = RepoCommitsResponse),
         (status = 500, description = "Internal server error", body = ApiError)
     ),
     tag = "repo"
@@ -26,7 +26,7 @@ pub async fn get_commits(
     State(_state): State<AppState>,
     Json(req): Json<RepoCommitsRequest>,
 ) -> Result<Json<RepoCommitsResponse>, (StatusCode, Json<ApiError>)> {
-    let commits = git::get_schematic_commits(&req.repo).await.map_err(|e| {
+    let commits = git::get_all_commits(&req.repo).await.map_err(|e| {
         error!("Failed to get commits for {}: {}", req.repo, e);
         (
             StatusCode::INTERNAL_SERVER_ERROR,

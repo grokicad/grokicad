@@ -17,6 +17,7 @@ export interface CommitInfo {
     commit_hash: string;
     commit_date: string | null;
     message: string | null;
+    has_schematic_changes: boolean;
 }
 
 export interface RepoCommitsResponse {

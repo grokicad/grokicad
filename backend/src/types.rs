@@ -20,13 +20,15 @@ pub struct CommitInfo {
     pub commit_date: Option<DateTime<Utc>>,
     /// Commit message summary
     pub message: Option<String>,
+    /// Whether this commit modified .kicad_sch files
+    pub has_schematic_changes: bool,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct RepoCommitsResponse {
     /// GitHub repository in "owner/repo" format
     pub repo: String,
-    /// List of commits that modified .kicad_sch files
+    /// List of all commits (includes flag for schematic changes)
     pub commits: Vec<CommitInfo>,
 }
 

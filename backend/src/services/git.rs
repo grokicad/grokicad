@@ -96,8 +96,8 @@ pub async fn get_repo_fresh(repo_slug: &str) -> Result<Repository> {
     get_repo_with_options(repo_slug, true).await
 }
 
-/// Get all commits that modify .kicad_sch files
-pub async fn get_schematic_commits(repo_slug: &str) -> Result<Vec<CommitInfo>> {
+/// Get all commits, with a flag indicating if they modify .kicad_sch files
+pub async fn get_all_commits(repo_slug: &str) -> Result<Vec<CommitInfo>> {
     let repo = get_repo(repo_slug).await?;
 
     tokio::task::spawn_blocking(move || -> Result<Vec<CommitInfo>> {
@@ -110,21 +110,29 @@ pub async fn get_schematic_commits(repo_slug: &str) -> Result<Vec<CommitInfo>> {
         for oid in revwalk {
             let oid = oid?;
             let commit = repo.find_commit(oid)?;
+            let commit_date = Utc.timestamp_opt(commit.time().seconds(), 0).single();
+            let has_changes = has_schematic_changes(&repo, &commit)?;
 
-            if has_schematic_changes(&repo, &commit)? {
-                let commit_date = Utc.timestamp_opt(commit.time().seconds(), 0).single();
-
-                commits.push(CommitInfo {
-                    commit_hash: commit.id().to_string(),
-                    commit_date,
-                    message: commit.summary().map(ToString::to_string),
-                });
-            }
+            commits.push(CommitInfo {
+                commit_hash: commit.id().to_string(),
+                commit_date,
+                message: commit.summary().map(ToString::to_string),
+                has_schematic_changes: has_changes,
+            });
         }
 
         Ok(commits)
     })
     .await?
+}
+
+/// Get only commits that modify .kicad_sch files (for hook processing)
+pub async fn get_schematic_commits(repo_slug: &str) -> Result<Vec<CommitInfo>> {
+    let all_commits = get_all_commits(repo_slug).await?;
+    Ok(all_commits
+        .into_iter()
+        .filter(|c| c.has_schematic_changes)
+        .collect())
 }
 
 /// Check if a commit contains changes to .kicad_sch files
@@ -265,10 +273,13 @@ pub async fn get_commit_info(repo_slug: &str, commit_hash: &str) -> Result<Commi
 
         let commit_date = Utc.timestamp_opt(commit.time().seconds(), 0).single();
 
+        let has_changes = has_schematic_changes(&repo, &commit)?;
+
         Ok(CommitInfo {
             commit_hash: commit.id().to_string(),
             commit_date,
             message: commit.summary().map(ToString::to_string),
+            has_schematic_changes: has_changes,
         })
     })
     .await?
