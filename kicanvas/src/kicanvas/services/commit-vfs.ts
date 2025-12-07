@@ -54,7 +54,9 @@ export class CommitFileSystem extends VirtualFileSystem {
     }
 
     public override *list(): Generator<string> {
-        yield* this.files.keys();
+        for (const key of this.files.keys()) {
+            yield key;
+        }
     }
 
     public override async has(name: string): Promise<boolean> {

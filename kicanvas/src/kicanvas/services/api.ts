@@ -6,10 +6,8 @@
 // Configure API base URL - can be overridden for different environments
 // Uses BACKEND_URL environment variable (set via BACKEND_IP and BACKEND_PORT in .env)
 // Falls back to localhost if not set
-// @ts-ignore - process.env.BACKEND_URL is injected at build time by esbuild
-const API_BASE_URL = process.env.BACKEND_URL
-    ? `${process.env.BACKEND_URL}/api`
-    : "/api";
+const BACKEND_URL = process.env["BACKEND_URL"];
+const API_BASE_URL = BACKEND_URL ? `${BACKEND_URL}/api` : "/api";
 
 console.log(`[API] Using backend URL: ${API_BASE_URL}`);
 
