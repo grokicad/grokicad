@@ -12,15 +12,40 @@ echo -e "${YELLOW}=== Backend Redeploy Script ===${NC}"
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+DISTILLER_DIR="$PROJECT_ROOT/schematic-distiller"
 
 cd "$PROJECT_ROOT"
 
 # Step 1: Pull latest changes
-echo -e "\n${GREEN}[1/4] Pulling latest changes...${NC}"
+echo -e "\n${GREEN}[1/5] Pulling latest changes...${NC}"
 git pull
 
-# Step 2: Stop existing backend process
-echo -e "\n${GREEN}[2/4] Stopping existing backend...${NC}"
+# Step 2: Setup schematic-distiller Python venv
+echo -e "\n${GREEN}[2/5] Setting up schematic-distiller Python environment...${NC}"
+if [ ! -f "$DISTILLER_DIR/.venv/bin/python" ]; then
+    echo "Creating Python virtual environment..."
+    cd "$DISTILLER_DIR"
+    python3.11 -m venv .venv
+    source .venv/bin/activate
+    pip install --upgrade pip
+    pip install -e .
+    deactivate
+    echo "Python venv created and dependencies installed."
+else
+    echo "Python venv already exists."
+    # Check if we need to update dependencies (if pyproject.toml changed)
+    if [ "$DISTILLER_DIR/pyproject.toml" -nt "$DISTILLER_DIR/.venv/bin/pip" ]; then
+        echo "pyproject.toml changed, updating dependencies..."
+        cd "$DISTILLER_DIR"
+        source .venv/bin/activate
+        pip install -e .
+        deactivate
+    fi
+fi
+cd "$PROJECT_ROOT"
+
+# Step 3: Stop existing backend process
+echo -e "\n${GREEN}[3/5] Stopping existing backend...${NC}"
 # Find and kill any process running kicad-backend
 if pgrep -f "kicad-backend" > /dev/null; then
     echo "Found running kicad-backend process(es), stopping..."
@@ -37,13 +62,13 @@ else
     echo "No existing backend process found."
 fi
 
-# Step 3: Build the backend
-echo -e "\n${GREEN}[3/4] Building backend (release mode)...${NC}"
+# Step 4: Build the backend
+echo -e "\n${GREEN}[4/5] Building backend (release mode)...${NC}"
 cd "$SCRIPT_DIR"
 cargo build --release
 
-# Step 4: Start the backend
-echo -e "\n${GREEN}[4/4] Starting backend...${NC}"
+# Step 5: Start the backend
+echo -e "\n${GREEN}[5/5] Starting backend...${NC}"
 nohup ./target/release/kicad-backend > nohup.out 2>&1 &
 NEW_PID=$!
 sleep 2
@@ -60,4 +85,3 @@ else
 fi
 
 echo -e "\n${GREEN}=== Redeploy Complete ===${NC}"
-
