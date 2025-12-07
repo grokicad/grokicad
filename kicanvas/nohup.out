@@ -1,0 +1,6 @@
+$ node scripts/serve.js
+[dotenv@17.2.3] injecting env (0) from .env -- tip: ⚙️  load multiple .env files with { path: ['.env.local', '.env'] }
+[bundle] Using backend URL: http://localhost:443
+[watch] build started
+[serve] listening at http://undefined:8001
+[watch] build finished

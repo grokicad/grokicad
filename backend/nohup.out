@@ -1,0 +1,4 @@
+[2m2025-12-07T18:47:35.923164Z[0m [32m INFO[0m [2mkicad_backend[0m[2m:[0m Server listening on 0.0.0.0:8080
+[2m2025-12-07T18:47:35.923207Z[0m [32m INFO[0m [2mkicad_backend[0m[2m:[0m Swagger UI available at http://localhost:8080/swagger-ui/
+[2m2025-12-07T18:47:42.374859Z[0m [33m WARN[0m [2mkicad_backend::services::digikey[0m[2m:[0m DIGIKEY_CLIENT_ID not set - DigiKey integration will not work
+[2m2025-12-07T18:47:42.390483Z[0m [32m INFO[0m [2mkicad_backend::services::git[0m[2m:[0m Updated repo CwbhX/uBMS-2 from cache "/tmp/kicad-cache-CwbhX-uBMS-2", HEAD now at b6ccfc36
