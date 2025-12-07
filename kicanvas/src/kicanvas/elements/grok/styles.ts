@@ -441,77 +441,121 @@ export const presetStyles = css`
 // =============================================================================
 
 export const queryInputStyles = css`
-    .query-section {
-        flex-shrink: 0;
-        padding: 10px 14px;
-        background: rgba(20, 20, 20, 0.6);
-        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    /* Conversation section - takes remaining space */
+    .conversation-section {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        overflow: hidden;
     }
 
-    .query-input-container {
+    .conversation-scroll {
+        flex: 1;
+        overflow-y: auto;
+        overflow-x: hidden;
+        padding: 12px 14px;
+        scroll-behavior: smooth;
+    }
+
+    /* Inline message bubbles */
+    .message {
+        margin-bottom: 8px;
+        padding: 12px 14px;
+        border-radius: 8px;
+        animation: fadeIn 0.15s ease;
+    }
+
+    @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+
+    .assistant-bubble {
+        background: rgba(255, 255, 255, 0.04);
+        border-left: 3px solid rgba(255, 206, 84, 0.5);
+    }
+
+    .user-bubble {
+        background: rgba(96, 165, 250, 0.1);
+        border-left: 3px solid rgba(96, 165, 250, 0.5);
+    }
+
+    .error-bubble {
+        background: rgba(255, 100, 100, 0.1);
+        border-left: 3px solid rgba(255, 100, 100, 0.6);
+        color: rgb(255, 150, 150);
+    }
+
+    /* Chat input at bottom */
+    .chat-input-area {
+        flex-shrink: 0;
+        padding: 12px 14px;
+        background: rgba(20, 20, 20, 0.8);
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .chat-input-container {
         display: flex;
         gap: 8px;
         align-items: flex-end;
-    }
-
-    .query-input {
-        flex: 1;
-        padding: 8px 10px;
         background: rgba(255, 255, 255, 0.04);
         border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 6px;
-        color: rgba(255, 255, 255, 0.9);
-        font-size: 12px;
-        font-family: inherit;
-        outline: none;
-        resize: none;
-        min-height: 32px;
-        max-height: 64px;
+        border-radius: 12px;
+        padding: 8px 8px 8px 12px;
         transition: all 0.15s ease;
-        box-sizing: border-box;
-        line-height: 1.4;
     }
 
-    .query-input:focus {
+    .chat-input-container:focus-within {
         background: rgba(255, 255, 255, 0.06);
         border-color: rgba(255, 206, 84, 0.4);
     }
 
+    .query-input {
+        flex: 1;
+        padding: 0;
+        background: transparent;
+        border: none;
+        color: rgba(255, 255, 255, 0.9);
+        font-size: 13px;
+        font-family: inherit;
+        outline: none;
+        resize: none;
+        min-height: 20px;
+        max-height: 80px;
+        line-height: 1.4;
+    }
+
     .query-input::placeholder {
-        color: rgba(255, 255, 255, 0.3);
-        font-size: 12px;
+        color: rgba(255, 255, 255, 0.35);
     }
 
     .send-button {
         display: flex;
         align-items: center;
         justify-content: center;
-        min-width: 32px;
+        width: 32px;
         height: 32px;
-        background: rgba(255, 206, 84, 0.15);
-        border: 1px solid rgba(255, 206, 84, 0.3);
-        border-radius: 6px;
+        background: rgba(255, 206, 84, 0.2);
+        border: none;
+        border-radius: 8px;
         cursor: pointer;
         transition: all 0.15s ease;
-        color: rgba(255, 206, 84, 0.9);
-        font-family: "Material Symbols Outlined";
-        font-size: 16px;
-        font-weight: normal;
-        font-style: normal;
-        line-height: 1;
+        color: rgba(255, 206, 84, 1);
         flex-shrink: 0;
     }
 
+    .send-button kc-ui-icon {
+        font-size: 18px;
+    }
+
     .send-button:hover:not(:disabled) {
-        background: rgba(255, 206, 84, 0.25);
-        border-color: rgba(255, 206, 84, 0.5);
-        color: rgba(255, 206, 84, 1);
+        background: rgba(255, 206, 84, 0.35);
     }
 
     .send-button:disabled {
-        background: rgba(255, 255, 255, 0.04);
-        border-color: rgba(255, 255, 255, 0.08);
-        color: rgba(255, 255, 255, 0.25);
+        background: rgba(255, 255, 255, 0.05);
+        color: rgba(255, 255, 255, 0.2);
         cursor: not-allowed;
     }
 `;
@@ -524,52 +568,10 @@ export const queryInputStyles = css`
 export const responseMarkdownStyles = grokMarkdownStyles;
 
 export const responseStyles = css`
-    .response-section {
-        flex: 1;
-        min-height: 120px;
-        display: flex;
-        flex-direction: column;
-        background: linear-gradient(180deg, rgba(0, 0, 0, 0.25) 0%, rgba(0, 0, 0, 0.35) 100%);
-        border-top: 1px solid rgba(255, 206, 84, 0.15);
-        overflow: hidden;
-    }
-
-    .response-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 8px 14px;
-        background: rgba(255, 206, 84, 0.08);
-        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-        flex-shrink: 0;
-    }
-
-    .response-header-title {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        font-size: 11px;
-        font-weight: 600;
-        color: rgba(255, 206, 84, 0.9);
-        text-transform: uppercase;
-        letter-spacing: 0.03em;
-    }
-
-    .response-header-icon {
-        font-size: 14px;
-    }
-
-    .response-scroll {
-        flex: 1;
-        overflow-y: auto;
-        overflow-x: hidden;
-        padding: 12px 14px;
-    }
-
     .response-content {
         font-size: 13px;
-        line-height: 1.65;
-        color: rgba(255, 255, 255, 0.88);
+        line-height: 1.6;
+        color: rgba(255, 255, 255, 0.9);
         word-wrap: break-word;
     }
 
@@ -596,23 +598,20 @@ export const responseStyles = css`
 
     .loading-indicator {
         display: flex;
-        flex-direction: column;
         align-items: center;
-        justify-content: center;
-        gap: 12px;
-        padding: 24px;
+        gap: 10px;
         color: rgba(255, 255, 255, 0.6);
         font-size: 13px;
     }
 
     .loading-dots {
         display: flex;
-        gap: 6px;
+        gap: 4px;
     }
 
     .loading-dots span {
-        width: 8px;
-        height: 8px;
+        width: 6px;
+        height: 6px;
         background: rgba(255, 206, 84, 0.7);
         border-radius: 50%;
         animation: loading-bounce 1.4s ease-in-out infinite;
@@ -641,30 +640,14 @@ export const responseStyles = css`
         }
     }
 
-    .error-message {
-        color: rgb(255, 120, 120);
-        font-size: 13px;
-        padding: 10px 14px;
-        background: rgba(255, 100, 100, 0.1);
-        border-radius: 8px;
-        border: 1px solid rgba(255, 100, 100, 0.25);
-        line-height: 1.5;
-    }
-
     .empty-state {
         display: flex;
-        flex-direction: column;
         align-items: center;
         justify-content: center;
-        padding: 32px 20px;
+        padding: 30px 20px;
         text-align: center;
-        color: rgba(255, 255, 255, 0.4);
-    }
-
-    .empty-state-icon {
-        font-size: 32px;
-        margin-bottom: 12px;
-        opacity: 0.6;
+        color: rgba(255, 255, 255, 0.3);
+        height: 100%;
     }
 
     .empty-state-text {
@@ -679,26 +662,26 @@ export const responseStyles = css`
 
 export const scrollbarStyles = css`
     .controls-content::-webkit-scrollbar,
-    .response-scroll::-webkit-scrollbar,
+    .conversation-scroll::-webkit-scrollbar,
     .search-results::-webkit-scrollbar {
         width: 5px;
     }
 
     .controls-content::-webkit-scrollbar-track,
-    .response-scroll::-webkit-scrollbar-track,
+    .conversation-scroll::-webkit-scrollbar-track,
     .search-results::-webkit-scrollbar-track {
         background: transparent;
     }
 
     .controls-content::-webkit-scrollbar-thumb,
-    .response-scroll::-webkit-scrollbar-thumb,
+    .conversation-scroll::-webkit-scrollbar-thumb,
     .search-results::-webkit-scrollbar-thumb {
         background: rgba(255, 255, 255, 0.15);
         border-radius: 3px;
     }
 
     .controls-content::-webkit-scrollbar-thumb:hover,
-    .response-scroll::-webkit-scrollbar-thumb:hover,
+    .conversation-scroll::-webkit-scrollbar-thumb:hover,
     .search-results::-webkit-scrollbar-thumb:hover {
         background: rgba(255, 255, 255, 0.25);
     }

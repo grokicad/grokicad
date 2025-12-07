@@ -120,6 +120,15 @@ export class KCGrokChatPanelElement extends KCUIElement {
         } else {
             this.removeAttribute('data-search-open');
         }
+
+        // Ensure response content is rendered as HTML after re-render
+        if (this._responseContent && !this._isLoading && !this._error) {
+            const responseEl = this.renderRoot.querySelector(".response-content");
+            if (responseEl) {
+                responseEl.innerHTML = this._formatContent(this._responseContent) +
+                    (this.streaming ? '<span class="cursor"></span>' : '');
+            }
+        }
     }
 
     // =========================================================================
@@ -607,6 +616,13 @@ export class KCGrokChatPanelElement extends KCUIElement {
                 { capture: true },
             ),
         );
+
+        // Track scroll position to disable auto-scroll when user scrolls up
+        this.addDisposable(
+            delegate(root, ".conversation-scroll", "scroll", () => {
+                this._checkScrollPosition();
+            }),
+        );
     }
 
     // =========================================================================
@@ -836,6 +852,7 @@ export class KCGrokChatPanelElement extends KCUIElement {
         this._error = null;
         this._responseContent = "";
         this.streaming = true;
+        this._shouldAutoScroll = true; // Reset auto-scroll for new query
         this._scheduleUpdate();
 
         await grokAPI.streamQuery(
@@ -861,6 +878,11 @@ export class KCGrokChatPanelElement extends KCUIElement {
                 },
                 onComplete: () => {
                     this.streaming = false;
+                    // Final update to remove cursor and ensure content persists
+                    const responseEl = this.renderRoot.querySelector(".response-content");
+                    if (responseEl) {
+                        responseEl.innerHTML = this._formatContent(this._responseContent);
+                    }
                     this._scheduleUpdate();
                 },
                 onError: (error) => {
@@ -873,10 +895,27 @@ export class KCGrokChatPanelElement extends KCUIElement {
         );
     }
 
+    private _shouldAutoScroll = true;
+
     private _scrollResponseToBottom() {
-        const responseEl = this.renderRoot.querySelector(".response-scroll");
-        if (responseEl) {
-            responseEl.scrollTop = responseEl.scrollHeight;
+        if (!this._shouldAutoScroll) return;
+        
+        const scrollEl = this.renderRoot.querySelector(".conversation-scroll");
+        if (scrollEl) {
+            // Smooth scroll to bottom
+            scrollEl.scrollTo({
+                top: scrollEl.scrollHeight,
+                behavior: 'smooth'
+            });
+        }
+    }
+
+    private _checkScrollPosition() {
+        const scrollEl = this.renderRoot.querySelector(".conversation-scroll");
+        if (scrollEl) {
+            // Auto-scroll if user is within 100px of the bottom
+            const isNearBottom = scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight < 100;
+            this._shouldAutoScroll = isNearBottom;
         }
     }
 
@@ -1042,65 +1081,47 @@ export class KCGrokChatPanelElement extends KCUIElement {
         `;
     }
 
-    private _renderQueryInput() {
-        const canSubmit =
-            this._customQuery.trim().length > 0 && !this.streaming;
+    private _renderConversation() {
+        const canSubmit = this._customQuery.trim().length > 0 && !this.streaming;
 
         return html`
-            <div class="query-section">
-                <div class="query-input-container">
-                    <textarea
-                        class="query-input"
-                        placeholder="Ask anything about the schematic..."></textarea>
-                    <button class="send-button" ?disabled="${!canSubmit}">
-                        send
-                    </button>
-                </div>
-            </div>
-        `;
-    }
-
-    private _renderResponse() {
-        return html`
-            <div class="response-section">
-                <div class="response-header">
-                    <div class="response-header-title">
-                        <span class="response-header-icon">✨</span>
-                        <span>Grok Response</span>
-                    </div>
-                </div>
-                <div class="response-scroll">
+            <div class="conversation-section">
+                <div class="conversation-scroll">
                     ${this._error
-                        ? html`<div class="error-message">${this._error}</div>`
+                        ? html`<div class="message error-bubble">${this._error}</div>`
                         : this._isLoading
                         ? html`
-                              <div class="loading-indicator">
-                                  <div class="loading-dots">
-                                      <span></span>
-                                      <span></span>
-                                      <span></span>
-                                  </div>
-                                  <span>Analyzing with Grok...</span>
-                              </div>
+                            <div class="message assistant-bubble">
+                                <div class="loading-indicator">
+                                    <div class="loading-dots">
+                                        <span></span>
+                                        <span></span>
+                                        <span></span>
+                                    </div>
+                                    <span>Analyzing...</span>
+                                </div>
+                            </div>
                           `
                         : this._responseContent
-                        ? html`
-                              <div class="response-content">
-                                  ${this._formatContent(this._responseContent)}
-                                  ${this.streaming
-                                      ? html`<span class="cursor"></span>`
-                                      : null}
-                              </div>
-                          `
+                        ? html`<div class="message assistant-bubble"><div class="response-content"></div></div>`
                         : html`
-                              <div class="empty-state">
-                                  <div class="empty-state-icon">💬</div>
-                                  <div class="empty-state-text">
-                                      Select a quick action above or<br />
-                                      type a custom question to get started
-                                  </div>
-                              </div>
+                            <div class="empty-state">
+                                <div class="empty-state-text">
+                                    Select a quick action above or ask a question below
+                                </div>
+                            </div>
                           `}
+                </div>
+                <div class="chat-input-area">
+                    <div class="chat-input-container">
+                        <textarea
+                            class="query-input"
+                            placeholder="Ask about the schematic..."
+                            rows="1"></textarea>
+                        <button class="send-button" ?disabled="${!canSubmit}">
+                            <kc-ui-icon>send</kc-ui-icon>
+                        </button>
+                    </div>
                 </div>
             </div>
         `;
@@ -1137,8 +1158,7 @@ export class KCGrokChatPanelElement extends KCUIElement {
                 ${this._renderHeader()}
                 <div class="chat-body">
                     ${this._renderCollapsibleControls()}
-                    ${this._renderQueryInput()}
-                    ${this._renderResponse()}
+                    ${this._renderConversation()}
                 </div>
             </div>
         `;
