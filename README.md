@@ -1,8 +1,7 @@
 # GroKi
 
-![GroKi overview](./images/groki.png)
-
 ![GroKi in action](./images/groki-intro.png)
+![GroKi overview](./images/groki.png)
 
  AI-powered KiCad understanding for humans. GroKi distills complex schematics into structured data, streams AI explanations, and tracks changes across hardware repos so other engineers, reviewers, and stakeholders (not just EEs) can see what changed, why, and where to look next. Try it out at https://grokicad.com.
 
