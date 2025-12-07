@@ -16,9 +16,9 @@
     --tooltip-border: 1px solid #333333;
 
     --scrollbar-bg: #000000;
-    --scrollbar-fg: rgba(255, 255, 255, 0.3);
-    --scrollbar-active-fg: rgba(255, 255, 255, 0.6);
-    --scrollbar-hover-bg: rgba(255, 255, 255, 0.1);
+    --scrollbar-fg: rgba(255, 206, 84, 0.5);
+    --scrollbar-active-fg: rgba(255, 206, 84, 0.9);
+    --scrollbar-hover-bg: rgba(255, 206, 84, 0.2);
 
     --activity-bar-bg: #0a0a0a;
     --activity-bar-fg: #ffffff;
@@ -166,9 +166,9 @@
         0 fixed;
 
     --scrollbar-bg: #000000;
-    --scrollbar-fg: rgba(255, 255, 255, 0.3);
-    --scrollbar-hover-fg: rgba(255, 255, 255, 0.5);
-    --scrollbar-active-fg: rgba(255, 255, 255, 0.6);
+    --scrollbar-fg: rgba(255, 206, 84, 0.5);
+    --scrollbar-hover-fg: rgba(255, 206, 84, 0.7);
+    --scrollbar-active-fg: rgba(255, 206, 84, 0.9);
 
     --activity-bar-bg: #0a0a0a;
 
