@@ -36,7 +36,10 @@ function formatDate(isoString: string | null): string {
     }
 }
 
-function truncateMessage(message: string | null, maxLength: number = 60): string {
+function truncateMessage(
+    message: string | null,
+    maxLength: number = 60,
+): string {
     if (!message) {
         return "No commit message";
     }
@@ -47,6 +50,11 @@ function truncateMessage(message: string | null, maxLength: number = 60): string
     }
     return firstLine.substring(0, maxLength - 3) + "...";
 }
+
+// Represents either a schematic commit or a group of non-schematic commits
+type CommitListItem =
+    | { type: "schematic"; commit: CommitInfo }
+    | { type: "collapsed"; commits: CommitInfo[] };
 
 export class KCSchematicGitPanelElement extends KCUIElement {
     static override styles = [
@@ -151,6 +159,93 @@ export class KCSchematicGitPanelElement extends KCUIElement {
                 padding-left: 1.5em;
             }
 
+            /* Collapsed group styles */
+            .collapsed-group {
+                border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            }
+
+            .collapsed-header {
+                display: flex;
+                align-items: center;
+                padding: 0.5em 0.5em 0.5em 1.5em;
+                cursor: pointer;
+                transition: background 0.15s ease;
+                color: rgba(255, 255, 255, 0.4);
+                font-size: 0.85em;
+                gap: 0.5em;
+            }
+
+            .collapsed-header:hover {
+                background: rgba(255, 255, 255, 0.03);
+                color: rgba(255, 255, 255, 0.6);
+            }
+
+            .collapsed-icon {
+                font-size: 0.7em;
+                transition: transform 0.2s ease;
+                display: inline-block;
+            }
+
+            .collapsed-group.expanded .collapsed-icon {
+                transform: rotate(90deg);
+            }
+
+            .collapsed-count {
+                background: rgba(255, 255, 255, 0.1);
+                padding: 0.1em 0.5em;
+                border-radius: 10px;
+                font-size: 0.9em;
+            }
+
+            .collapsed-commits {
+                display: none;
+                background: rgba(0, 0, 0, 0.2);
+            }
+
+            .collapsed-group.expanded .collapsed-commits {
+                display: block;
+            }
+
+            .collapsed-commit-item {
+                display: flex;
+                flex-direction: column;
+                padding: 0.5em 0.5em 0.5em 2em;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+                opacity: 0.5;
+            }
+
+            .collapsed-commit-item:last-child {
+                border-bottom: none;
+            }
+
+            .collapsed-commit-header {
+                display: flex;
+                align-items: center;
+                gap: 0.5em;
+                margin-bottom: 0.2em;
+            }
+
+            .collapsed-commit-hash {
+                font-family: "JetBrains Mono", "SF Mono", monospace;
+                font-size: 0.75em;
+                color: rgba(255, 255, 255, 0.4);
+                background: rgba(255, 255, 255, 0.05);
+                padding: 0.1em 0.4em;
+                border-radius: 3px;
+            }
+
+            .collapsed-commit-date {
+                font-size: 0.7em;
+                color: rgba(255, 255, 255, 0.3);
+                margin-left: auto;
+            }
+
+            .collapsed-commit-message {
+                font-size: 0.8em;
+                color: rgba(255, 255, 255, 0.5);
+                line-height: 1.3;
+            }
+
             .loading {
                 display: flex;
                 align-items: center;
@@ -183,21 +278,24 @@ export class KCSchematicGitPanelElement extends KCUIElement {
     error: string | null = null;
     currentRepo: string | null = null;
     currentCommit: string | null = null;
+    expandedGroups: Set<number> = new Set();
 
     override connectedCallback() {
         (async () => {
             this.viewer = await this.requestLazyContext("viewer");
             await this.viewer.loaded;
-            
+
             // Get repo info from context
             try {
-                const repoInfo = await this.requestLazyContext("repoInfo") as { repo: string | null; commit: string | null };
+                const repoInfo = (await this.requestLazyContext(
+                    "repoInfo",
+                )) as { repo: string | null; commit: string | null };
                 this.currentRepo = repoInfo.repo;
                 this.currentCommit = repoInfo.commit;
             } catch {
                 // No repo info available (e.g., drag & drop)
             }
-            
+
             super.connectedCallback();
             this.loadGitHistory();
             this.setupEvents();
@@ -210,7 +308,9 @@ export class KCSchematicGitPanelElement extends KCUIElement {
             this.viewer.addEventListener(KiCanvasLoadEvent.type, async () => {
                 // Re-fetch repo info
                 try {
-                    const repoInfo = await this.requestLazyContext("repoInfo") as { repo: string | null; commit: string | null };
+                    const repoInfo = (await this.requestLazyContext(
+                        "repoInfo",
+                    )) as { repo: string | null; commit: string | null };
                     this.currentRepo = repoInfo.repo;
                     this.currentCommit = repoInfo.commit;
                 } catch {
@@ -228,6 +328,22 @@ export class KCSchematicGitPanelElement extends KCUIElement {
                 this.onCommitClick(commit);
             }
         });
+
+        // Handle collapsed group toggle
+        delegate(this.renderRoot, ".collapsed-header", "click", (e, source) => {
+            const groupIndex = parseInt(
+                source.getAttribute("data-group-index") ?? "-1",
+                10,
+            );
+            if (groupIndex >= 0) {
+                if (this.expandedGroups.has(groupIndex)) {
+                    this.expandedGroups.delete(groupIndex);
+                } else {
+                    this.expandedGroups.add(groupIndex);
+                }
+                this.update();
+            }
+        });
     }
 
     private async loadGitHistory() {
@@ -240,6 +356,7 @@ export class KCSchematicGitPanelElement extends KCUIElement {
 
         this.loading = true;
         this.error = null;
+        this.expandedGroups.clear();
         this.update();
 
         try {
@@ -255,6 +372,11 @@ export class KCSchematicGitPanelElement extends KCUIElement {
 
     private onCommitClick(commit: CommitInfo) {
         if (!this.currentRepo || this.currentCommit === commit.commit_hash) {
+            return;
+        }
+
+        // Only allow clicking on schematic commits
+        if (!commit.has_schematic_changes) {
             return;
         }
 
@@ -276,11 +398,46 @@ export class KCSchematicGitPanelElement extends KCUIElement {
         this.update();
     }
 
+    /**
+     * Group commits into schematic commits and collapsed non-schematic groups
+     */
+    private groupCommits(): CommitListItem[] {
+        const items: CommitListItem[] = [];
+        let currentNonSchematicGroup: CommitInfo[] = [];
+
+        for (const commit of this.commits) {
+            if (commit.has_schematic_changes) {
+                // Flush any pending non-schematic commits as a collapsed group
+                if (currentNonSchematicGroup.length > 0) {
+                    items.push({
+                        type: "collapsed",
+                        commits: currentNonSchematicGroup,
+                    });
+                    currentNonSchematicGroup = [];
+                }
+                items.push({ type: "schematic", commit });
+            } else {
+                currentNonSchematicGroup.push(commit);
+            }
+        }
+
+        // Don't forget trailing non-schematic commits
+        if (currentNonSchematicGroup.length > 0) {
+            items.push({
+                type: "collapsed",
+                commits: currentNonSchematicGroup,
+            });
+        }
+
+        return items;
+    }
+
     override render() {
         if (this.loading) {
             return html`
                 <kc-ui-panel>
-                    <kc-ui-panel-title title="Commit History"></kc-ui-panel-title>
+                    <kc-ui-panel-title
+                        title="Commit History"></kc-ui-panel-title>
                     <kc-ui-panel-body>
                         <div class="loading">Loading commits...</div>
                     </kc-ui-panel-body>
@@ -291,7 +448,8 @@ export class KCSchematicGitPanelElement extends KCUIElement {
         if (this.error) {
             return html`
                 <kc-ui-panel>
-                    <kc-ui-panel-title title="Commit History"></kc-ui-panel-title>
+                    <kc-ui-panel-title
+                        title="Commit History"></kc-ui-panel-title>
                     <kc-ui-panel-body>
                         <div class="empty-state">
                             <div class="empty-state-icon">⚠️</div>
@@ -305,13 +463,16 @@ export class KCSchematicGitPanelElement extends KCUIElement {
         if (!this.currentRepo) {
             return html`
                 <kc-ui-panel>
-                    <kc-ui-panel-title title="Commit History"></kc-ui-panel-title>
+                    <kc-ui-panel-title
+                        title="Commit History"></kc-ui-panel-title>
                     <kc-ui-panel-body>
                         <div class="empty-state">
                             <div class="empty-state-icon">📁</div>
                             <div>No repository loaded</div>
-                            <div style="font-size: 0.85em; margin-top: 0.5em; opacity: 0.7;">
-                                Load a schematic from GitHub to see commit history
+                            <div
+                                style="font-size: 0.85em; margin-top: 0.5em; opacity: 0.7;">
+                                Load a schematic from GitHub to see commit
+                                history
                             </div>
                         </div>
                     </kc-ui-panel-body>
@@ -319,46 +480,102 @@ export class KCSchematicGitPanelElement extends KCUIElement {
             `;
         }
 
-        if (this.commits.length === 0) {
+        // Check if we have any schematic commits
+        const hasSchematicCommits = this.commits.some(
+            (c) => c.has_schematic_changes,
+        );
+
+        if (this.commits.length === 0 || !hasSchematicCommits) {
             return html`
                 <kc-ui-panel>
-                    <kc-ui-panel-title title="Commit History"></kc-ui-panel-title>
+                    <kc-ui-panel-title
+                        title="Commit History"></kc-ui-panel-title>
                     <kc-ui-panel-body>
                         <div class="empty-state">
                             <div class="empty-state-icon">📁</div>
-                            <div>No commits found</div>
+                            <div>No schematic commits found</div>
                         </div>
                     </kc-ui-panel-body>
                 </kc-ui-panel>
             `;
         }
 
-        const commitItems = this.commits.map((commit) => {
-            const isCurrent = this.currentCommit === commit.commit_hash;
-            const shortHash = commit.commit_hash.substring(0, 7);
+        const groupedItems = this.groupCommits();
+        let collapsedGroupIndex = 0;
 
-            return html`
-                <div
-                    class="commit-item ${isCurrent ? "current" : ""}"
-                    data-hash="${commit.commit_hash}">
-                    <div class="timeline"></div>
-                    <div class="timeline-dot"></div>
-                    <div class="commit-content">
-                        <div class="commit-header">
-                            <span class="commit-hash">${shortHash}</span>
-                            ${isCurrent
-                                ? html`<span class="current-badge">Viewing</span>`
-                                : null}
-                            <span class="commit-date">
-                                ${formatDate(commit.commit_date)}
-                            </span>
-                        </div>
-                        <div class="commit-message">
-                            ${truncateMessage(commit.message)}
+        const commitItems = groupedItems.map((item) => {
+            if (item.type === "schematic") {
+                const commit = item.commit;
+                const isCurrent = this.currentCommit === commit.commit_hash;
+                const shortHash = commit.commit_hash.substring(0, 7);
+
+                return html`
+                    <div
+                        class="commit-item ${isCurrent ? "current" : ""}"
+                        data-hash="${commit.commit_hash}">
+                        <div class="timeline"></div>
+                        <div class="timeline-dot"></div>
+                        <div class="commit-content">
+                            <div class="commit-header">
+                                <span class="commit-hash">${shortHash}</span>
+                                ${isCurrent
+                                    ? html`<span class="current-badge"
+                                          >Viewing</span
+                                      >`
+                                    : null}
+                                <span class="commit-date">
+                                    ${formatDate(commit.commit_date)}
+                                </span>
+                            </div>
+                            <div class="commit-message">
+                                ${truncateMessage(commit.message)}
+                            </div>
                         </div>
                     </div>
-                </div>
-            `;
+                `;
+            } else {
+                // Collapsed group of non-schematic commits
+                const currentGroupIndex = collapsedGroupIndex++;
+                const isExpanded = this.expandedGroups.has(currentGroupIndex);
+                const count = item.commits.length;
+
+                const collapsedCommits = item.commits.map((commit) => {
+                    const shortHash = commit.commit_hash.substring(0, 7);
+                    return html`
+                        <div class="collapsed-commit-item">
+                            <div class="collapsed-commit-header">
+                                <span class="collapsed-commit-hash"
+                                    >${shortHash}</span
+                                >
+                                <span class="collapsed-commit-date">
+                                    ${formatDate(commit.commit_date)}
+                                </span>
+                            </div>
+                            <div class="collapsed-commit-message">
+                                ${truncateMessage(commit.message)}
+                            </div>
+                        </div>
+                    `;
+                });
+
+                return html`
+                    <div
+                        class="collapsed-group ${isExpanded ? "expanded" : ""}">
+                        <div
+                            class="collapsed-header"
+                            data-group-index="${currentGroupIndex}">
+                            <span class="collapsed-icon">▶</span>
+                            <span class="collapsed-count">${count}</span>
+                            <span
+                                >${count === 1
+                                    ? "other commit"
+                                    : "other commits"}</span
+                            >
+                        </div>
+                        <div class="collapsed-commits">${collapsedCommits}</div>
+                    </div>
+                `;
+            }
         });
 
         return html`
