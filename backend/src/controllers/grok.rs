@@ -441,7 +441,7 @@ Format the response clearly with headers and bullet points."#,
 
     // Create responses request with Grok model (must use grok-4 family for tools)
     let responses_request =
-        ResponsesRequest::new("grok-4-1-fast-reasoning".to_string(), input, tools);
+        ResponsesRequest::new("grok-4-1-fast-non-reasoning".to_string(), input, tools);
 
     // Make API call using responses endpoint
     let api_response = xai_client

@@ -18,6 +18,11 @@ import type {
     GrokObsoleteReplacementResponse,
 } from "../../services/api";
 import { GrokiAPI } from "../../services/api";
+import {
+    MarkdownBuilder,
+    getDateStamp,
+    sanitizeFilename,
+} from "../../services/markdown";
 
 type SearchState = "idle" | "loading" | "success" | "error" | "not_configured";
 type ReplacementState = "idle" | "loading" | "success" | "error";
@@ -405,6 +410,30 @@ export class KCSchematicDigiKeyPanelElement extends KCUIElement {
                 color: #ef4444;
             }
 
+            .replacement-actions {
+                display: flex;
+                align-items: center;
+                gap: 0.25em;
+            }
+
+            .replacement-export {
+                background: none;
+                border: none;
+                color: #9ca3af;
+                cursor: pointer;
+                padding: 0.25em;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                border-radius: 4px;
+                transition: all 0.15s;
+            }
+
+            .replacement-export:hover {
+                background: rgba(78, 205, 196, 0.2);
+                color: #4ecdc4;
+            }
+
             .replacement-body {
                 padding: 0.75em;
                 max-height: 400px;
@@ -572,6 +601,14 @@ export class KCSchematicDigiKeyPanelElement extends KCUIElement {
         closeButtons.forEach((btn) => {
             btn.addEventListener("click", () => this.close_replacement_panel());
         });
+
+        // Bind export button for replacement panel
+        const exportBtn = this.renderRoot.querySelector(".replacement-export");
+        if (exportBtn) {
+            exportBtn.addEventListener("click", () =>
+                this.export_replacement_markdown(),
+            );
+        }
     }
 
     private setup_events() {
@@ -867,15 +904,48 @@ export class KCSchematicDigiKeyPanelElement extends KCUIElement {
                         <kc-ui-icon>psychology</kc-ui-icon>
                         Grok Recommends
                     </span>
-                    <button class="replacement-close">
-                        <kc-ui-icon>close</kc-ui-icon>
-                    </button>
+                    <div class="replacement-actions">
+                        <button
+                            class="replacement-export"
+                            title="Export as Markdown">
+                            <kc-ui-icon>download</kc-ui-icon>
+                        </button>
+                        <button class="replacement-close">
+                            <kc-ui-icon>close</kc-ui-icon>
+                        </button>
+                    </div>
                 </div>
                 <div class="replacement-body">
                     <div class="replacement-content">${formattedAnalysis}</div>
                 </div>
             </div>
         `;
+    }
+
+    private export_replacement_markdown() {
+        if (!this.replacement_result || !this.replacement_part) {
+            return;
+        }
+
+        const partNumber =
+            this.replacement_part.manufacturer_part_number || "Unknown Part";
+        const dateStamp = getDateStamp();
+
+        new MarkdownBuilder()
+            .heading(`Replacement Research: ${partNumber}`)
+            .metadata("Generated", dateStamp)
+            .metadata("Original Part", partNumber)
+            .metadata("Manufacturer", this.replacement_part.manufacturer)
+            .metadata("Description", this.replacement_part.description)
+            .metadata("Category", this.replacement_part.category)
+            .rule()
+            .heading("Grok AI Analysis", 2)
+            .raw(this.replacement_result.analysis)
+            .rule()
+            .italic("Research powered by Grok AI via groki")
+            .download({
+                filename: `replacement-research-${sanitizeFilename(partNumber)}-${dateStamp}`,
+            });
     }
 
     private format_analysis(text: string): HTMLElement {
