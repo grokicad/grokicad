@@ -11,6 +11,10 @@ use tracing::warn;
 /// Default XAI API base URL
 pub const DEFAULT_XAI_API_URL: &str = "https://api.x.ai/v1/chat/completions";
 
+/// Default XAI API responses endpoint URL
+pub const DEFAULT_XAI_RESPONSES_URL: &str = "https://api.x.ai/v1/responses";
+
+
 /// Default timeout in seconds (3600 seconds = 1 hour)
 pub const DEFAULT_TIMEOUT_SECONDS: u64 = 3600;
 
@@ -73,6 +77,117 @@ pub struct StreamChoice {
 pub type ChatCompletionStream = Pin<
     Box<dyn futures_util::Stream<Item = Result<String, Box<dyn std::error::Error + Send + Sync>>> + Send>,
 >;
+/// Tool type for XAI responses API
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolType {
+    WebSearch,
+    XSearch,
+}
+
+/// Tool definition for responses API
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Tool {
+    #[serde(rename = "type")]
+    pub tool_type: ToolType,
+}
+
+impl Tool {
+    pub fn web_search() -> Self {
+        Self {
+            tool_type: ToolType::WebSearch,
+        }
+    }
+
+    pub fn x_search() -> Self {
+        Self {
+            tool_type: ToolType::XSearch,
+        }
+    }
+}
+
+/// Input message for responses API (simpler than chat completions)
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct InputMessage {
+    pub role: String,
+    pub content: String,
+}
+
+impl InputMessage {
+    pub fn user(content: String) -> Self {
+        Self {
+            role: "user".to_string(),
+            content,
+        }
+    }
+}
+
+/// Request for XAI responses endpoint
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ResponsesRequest {
+    pub model: String,
+    pub input: Vec<InputMessage>,
+    pub tools: Vec<Tool>,
+}
+
+impl ResponsesRequest {
+    /// Create a new responses request
+    pub fn new(model: String, input: Vec<InputMessage>, tools: Vec<Tool>) -> Self {
+        Self {
+            model,
+            input,
+            tools,
+        }
+    }
+
+    /// Convert to JSON string
+    pub fn to_json(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string(self)
+    }
+
+    /// Convert to pretty JSON string
+    pub fn to_json_pretty(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string_pretty(self)
+    }
+}
+
+/// Response from XAI responses endpoint
+#[derive(Deserialize, Debug)]
+pub struct ResponsesResponse {
+    #[serde(rename = "created_at")]
+    pub created_at: Option<u64>,
+    pub id: Option<String>,
+    #[serde(rename = "max_output_tokens")]
+    pub max_output_tokens: Option<u32>,
+    pub model: Option<String>,
+    pub object: Option<String>,
+    pub output: Option<Vec<ResponsesOutput>>,
+    pub usage: Option<ResponsesUsage>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct ResponsesOutput {
+    #[serde(rename = "call_id")]
+    pub call_id: Option<String>,
+    pub input: Option<String>,
+    pub name: Option<String>,
+    #[serde(rename = "type")]
+    pub output_type: Option<String>,
+    pub id: Option<String>,
+    pub status: Option<String>,
+    // Some outputs might have result or content fields (content can be array or string)
+    pub result: Option<serde_json::Value>,
+    // Make content flexible - can be string, array, or other types
+    #[serde(default)]
+    pub content: Option<serde_json::Value>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ResponsesUsage {
+    pub prompt_tokens: Option<u32>,
+    pub completion_tokens: Option<u32>,
+    pub total_tokens: Option<u32>,
+}
 
 /// XAI API client for making chat completion requests
 #[derive(Debug, Clone)]
@@ -148,14 +263,66 @@ impl XaiClient {
         Ok(completion_response)
     }
 
-    /// Get the base URL
-    pub fn base_url(&self) -> &str {
-        &self.base_url
+    /// Make a responses request (with tools support)
+    pub async fn responses(
+        &self,
+        request: &ResponsesRequest,
+    ) -> Result<ResponsesResponse, Box<dyn std::error::Error>> {
+        let client = reqwest::Client::builder().timeout(self.timeout).build()?;
+
+        let response = client
+            .post(DEFAULT_XAI_RESPONSES_URL)
+            .header("Content-Type", "application/json")
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .json(request)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+
+            // Check specifically for rate limiting
+            if status.as_u16() == 429 {
+                eprintln!(
+                    "ERROR: XAI API RATE LIMITED (429)! Response: {}",
+                    error_text
+                );
+                return Err(format!(
+                    "RATE LIMITED: XAI API returned 429. Response: {}",
+                    error_text
+                )
+                .into());
+            }
+
+            return Err(
+                format!("API request failed with status {}: {}", status, error_text).into(),
+            );
+        }
+
+        // Get raw response text for debugging
+        let raw_text = response.text().await?;
+        
+        // Try to deserialize
+        let responses_result: ResponsesResponse = serde_json::from_str(&raw_text).map_err(|e| {
+            eprintln!("Failed to deserialize response. Raw response (first 1000 chars): {}", 
+                &raw_text[..raw_text.len().min(1000)]);
+            e
+        })?;
+        Ok(responses_result)
     }
 
     /// Get the timeout
     pub fn timeout(&self) -> Duration {
         self.timeout
+    }
+
+    /// Get the base URL
+    pub fn base_url(&self) -> &str {
+        &self.base_url
     }
 
     /// Make a streaming chat completion request
@@ -271,10 +438,8 @@ mod tests {
         println!("=== XAI Client Configuration ===");
         println!("Base URL: {}", client.base_url());
         println!("Timeout: {} seconds", client.timeout().as_secs());
-        println!(
-            "API Key loaded: {}...",
-            &client.api_key[..client.api_key.len().min(10)]
-        );
+        // Remove the api_key line since it's private, or just print that it's loaded
+        println!("API Key: [loaded]");
 
         assert_eq!(client.base_url(), DEFAULT_XAI_API_URL);
         assert_eq!(client.timeout().as_secs(), DEFAULT_TIMEOUT_SECONDS);
@@ -363,6 +528,71 @@ mod tests {
                     if let Some(msg) = &choice.message {
                         println!("  Role: {:?}", msg.role);
                         println!("  Content: {:?}", msg.content);
+                    }
+                }
+
+                if let Some(usage) = &resp.usage {
+                    println!("\nToken Usage:");
+                    println!("  Prompt tokens: {:?}", usage.prompt_tokens);
+                    println!("  Completion tokens: {:?}", usage.completion_tokens);
+                    println!("  Total tokens: {:?}", usage.total_tokens);
+                }
+            }
+            Err(e) => {
+                println!("\n=== API Error ===");
+                println!("Error: {}", e);
+                panic!("API call failed: {}", e);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_responses_with_tools() {
+        // Load environment file first
+        load_environment_file(None).expect("Should load .env file");
+
+        let client = XaiClient::new().expect("Should create client");
+
+        let input = vec![InputMessage::user(
+            "what is the latest update from xAI?".to_string(),
+        )];
+
+        let tools = vec![Tool::web_search(), Tool::x_search()];
+
+        let request = ResponsesRequest::new("grok-4-1-fast".to_string(), input, tools);
+
+        println!("\n=== Making XAI Responses API Call ===");
+        println!("Model: {}", request.model);
+        println!("Input messages: {}", request.input.len());
+        println!("Tools: {:?}", request.tools);
+        println!("Request JSON: {}", request.to_json_pretty().unwrap());
+
+        let response = client.responses(&request).await;
+
+        match response {
+            Ok(resp) => {
+                println!("\n=== API Response ===");
+                println!("Response ID: {:?}", resp.id);
+                println!("Model: {:?}", resp.model);
+                println!("Created At: {:?}", resp.created_at);
+                println!("Object: {:?}", resp.object);
+
+                if let Some(output) = &resp.output {
+                    println!("\nOutput items ({}):", output.len());
+                    for (idx, item) in output.iter().enumerate() {
+                        println!("\nOutput {}:", idx);
+                        println!("  Call ID: {:?}", item.call_id);
+                        println!("  Name: {:?}", item.name);
+                        println!("  Type: {:?}", item.output_type);
+                        println!("  ID: {:?}", item.id);
+                        println!("  Status: {:?}", item.status);
+                        println!("  Input: {:?}", item.input);
+                        if let Some(result) = &item.result {
+                            println!("  Result: {:?}", result);
+                        }
+                        if let Some(content) = &item.content {
+                            println!("  Content: {:?}", content);
+                        }
                     }
                 }
 
