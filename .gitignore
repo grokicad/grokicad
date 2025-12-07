@@ -1,1 +1,49 @@
+# OS/Editor
 .DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# IDE
+.vscode/
+.idea/
+
+# Git
+.git/
+
+# Rust (database/)
+**/target/
+**/Cargo.lock  # Or commit for reproducibility
+
+# Python (if any remnants in web/ or elsewhere)
+**/__pycache__/
+**/.venv/
+**/venv/
+**/.env
+.env
+
+# Node (web/)
+**/node_modules/
+**/.pnp
+.pnp.*
+.yarn/install-state.gz
+**/yarn-error.log
+
+# Docker
+**/.dockerignore  # If added
+docker-compose.override.yml
+
+# KiCAD/Temp
+**/*.lck
+**/~*
+
+# Logs/DB Data
+*.log
+**/logs/
+database/postgres_data/  # Ignore Docker volumes/data
+
+# Builds/Dist
+build/
+dist/
+
