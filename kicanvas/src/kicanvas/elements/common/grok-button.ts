@@ -6,8 +6,40 @@
 
 import { attribute, css, html } from "../../../base/web-components";
 import { KCUIElement } from "../../../kc-ui";
-import { KiCanvasSelectEvent } from "../../../viewers/base/events";
+import {
+    KiCanvasSelectEvent,
+    KiCanvasZoneSelectEvent,
+    type ZoneConnection,
+} from "../../../viewers/base/events";
 import type { Viewer } from "../../../viewers/base/viewer";
+
+/** Item with a uuid property */
+interface UuidItem {
+    uuid: string;
+}
+
+/** Check if an item has a uuid property */
+function hasUuid(item: unknown): item is UuidItem {
+    return (
+        item !== null &&
+        typeof item === "object" &&
+        "uuid" in item &&
+        typeof (item as UuidItem).uuid === "string"
+    );
+}
+
+/** Payload structure for Grok API request */
+export interface GrokPayload {
+    selectedItems: {
+        uuid: string;
+        type: string;
+        reference?: string;
+        value?: string;
+    }[];
+    connections: ZoneConnection[];
+    bounds: { x: number; y: number; w: number; h: number };
+    timestamp: number;
+}
 
 export class KCGrokButtonElement extends KCUIElement {
     static override styles = [
@@ -161,6 +193,14 @@ export class KCGrokButtonElement extends KCUIElement {
 
     viewer: Viewer;
     #hasSelection: boolean = false;
+    #selectedItems: unknown[] = [];
+    #connections: ZoneConnection[] = [];
+    #bounds: { x: number; y: number; w: number; h: number } = {
+        x: 0,
+        y: 0,
+        w: 0,
+        h: 0,
+    };
 
     override initialContentCallback() {
         // Add click listener to button
@@ -176,16 +216,36 @@ export class KCGrokButtonElement extends KCUIElement {
                 this.viewer = await this.requestLazyContext("viewer");
                 await this.viewer.loaded;
 
-                // Listen for selection events
+                // Listen for single selection events (for backward compatibility)
                 this.addDisposable(
-                    this.viewer.addEventListener(KiCanvasSelectEvent.type, (e) => {
-                        this.#hasSelection = !!e.detail.item;
-                        if (this.#hasSelection) {
-                            this.setAttribute("has-selection", "");
-                        } else {
-                            this.removeAttribute("has-selection");
-                        }
-                    }),
+                    this.viewer.addEventListener(
+                        KiCanvasSelectEvent.type,
+                        (e) => {
+                            // Single selection updates hasSelection indicator
+                            // but zone select takes precedence for items
+                            if (this.#selectedItems.length === 0) {
+                                this.#hasSelection = !!e.detail.item;
+                                if (e.detail.item) {
+                                    this.#selectedItems = [e.detail.item];
+                                }
+                                this.#updateSelectionAttribute();
+                            }
+                        },
+                    ),
+                );
+
+                // Listen for zone/multi-selection events
+                this.addDisposable(
+                    this.viewer.addEventListener(
+                        KiCanvasZoneSelectEvent.type,
+                        (e) => {
+                            this.#selectedItems = e.detail.items;
+                            this.#connections = e.detail.connections;
+                            this.#bounds = e.detail.bounds;
+                            this.#hasSelection = this.#selectedItems.length > 0;
+                            this.#updateSelectionAttribute();
+                        },
+                    ),
                 );
             } catch (err) {
                 console.warn("Grok button: Could not get viewer context", err);
@@ -193,14 +253,61 @@ export class KCGrokButtonElement extends KCUIElement {
         })();
     }
 
+    #updateSelectionAttribute() {
+        if (this.#hasSelection) {
+            this.setAttribute("has-selection", "");
+        } else {
+            this.removeAttribute("has-selection");
+        }
+    }
+
+    #buildPayload(): GrokPayload {
+        const selectedItems = this.#selectedItems.map((item) => {
+            const entry: GrokPayload["selectedItems"][0] = {
+                uuid: hasUuid(item) ? item.uuid : "unknown",
+                type: item?.constructor?.name ?? "unknown",
+            };
+
+            // Extract additional info for common types
+            if (item && typeof item === "object") {
+                if ("reference" in item && typeof item.reference === "string") {
+                    entry.reference = item.reference;
+                }
+                if ("value" in item && typeof item.value === "string") {
+                    entry.value = item.value;
+                }
+            }
+
+            return entry;
+        });
+
+        return {
+            selectedItems,
+            connections: this.#connections,
+            bounds: this.#bounds,
+            timestamp: Date.now(),
+        };
+    }
+
     #onClick() {
+        const payload = this.#buildPayload();
+
+        // Log the payload to console (for now, instead of API call)
+        console.log("=== GROK BUTTON CLICKED ===");
+        console.log("Selected Items Count:", payload.selectedItems.length);
+        console.log("Selected Item UIDs:", payload.selectedItems.map((i) => i.uuid));
+        console.log("Full Payload:", payload);
+        console.log("JSON Payload:", JSON.stringify(payload, null, 2));
+        console.log("===========================");
+
+        // Dispatch event with payload for external consumers
         this.dispatchEvent(
             new CustomEvent("grok-click", {
                 bubbles: true,
                 composed: true,
                 detail: {
                     hasSelection: this.#hasSelection,
-                    selectedItem: this.viewer?.selected,
+                    payload: payload,
                 },
             }),
         );
