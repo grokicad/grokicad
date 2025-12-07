@@ -219,6 +219,18 @@ section.overlay input::placeholder {
     color: #555555;
 }
 
+/* Override Chrome autofill styling */
+section.overlay input:-webkit-autofill,
+section.overlay input:-webkit-autofill:hover,
+section.overlay input:-webkit-autofill:focus,
+section.overlay input:-webkit-autofill:active {
+    -webkit-box-shadow: 0 0 0 1000px rgba(20, 20, 20, 1) inset !important;
+    -webkit-text-fill-color: #ffffff !important;
+    background-color: rgba(255, 255, 255, 0.05) !important;
+    border-color: rgba(255, 255, 255, 0.2) !important;
+    caret-color: #ffffff !important;
+}
+
 section.overlay p.drop-hint {
     font-size: 1em;
     color: #555555;
@@ -271,4 +283,41 @@ kc-ui-app {
     flex-direction: row;
     width: 100%;
     height: 100%;
+}
+
+/* Error state - input styling (only when error attribute has a non-empty value) */
+:host([error]:not([error=""])) section.overlay input {
+    border-color: rgba(255, 107, 107, 0.5);
+    background: rgba(255, 107, 107, 0.1);
+}
+
+:host([error]:not([error=""])) section.overlay input:focus {
+    border-color: rgba(255, 107, 107, 0.7);
+    box-shadow: 0 0 30px rgba(255, 107, 107, 0.15);
+    background: rgba(255, 107, 107, 0.15);
+}
+
+/* Error bar styles */
+.error-bar {
+    width: 100%;
+    max-width: 500px;
+    min-height: 0;
+    margin-top: 0.75em;
+    padding: 0;
+    font-family: "JetBrains Mono", "SF Mono", "Fira Code", monospace;
+    font-size: 0.9em;
+    color: #ff6b6b;
+    text-align: center;
+    line-height: 1.5;
+    z-index: 2;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+:host([error]:not([error=""])) .error-bar {
+    opacity: 1;
+}
+
+.error-bar:empty {
+    display: none;
 }

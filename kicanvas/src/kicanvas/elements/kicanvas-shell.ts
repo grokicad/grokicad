@@ -77,6 +77,9 @@ class KiCanvasShellElement extends KCUIElement {
     public loaded: boolean;
 
     @attribute({ type: String })
+    public error: string;
+
+    @attribute({ type: String })
     public src: string;
 
     @query(`input[name="link"]`, true)
@@ -110,11 +113,23 @@ class KiCanvasShellElement extends KCUIElement {
                 // For drag+drop, we don't have commit history
                 this.#current_repo = null;
                 this.#current_commit = null;
+                this.clearError();
                 await this.setup_project(fs);
             });
         });
 
-        this.link_input.addEventListener("input", async (e) => {
+        // Clear error when user types
+        this.link_input.addEventListener("input", () => {
+            this.clearError();
+        });
+
+        // Load on Enter key
+        this.link_input.addEventListener("keydown", async (e) => {
+            if (e.key !== "Enter") {
+                return;
+            }
+            e.preventDefault();
+
             const link = this.link_input.value;
 
             // Extract repo from the link
@@ -144,6 +159,7 @@ class KiCanvasShellElement extends KCUIElement {
     private async loadViaBackendAPI(repo: string): Promise<void> {
         this.loaded = false;
         this.loading = true;
+        this.removeAttribute("error");
 
         try {
             // Get commits from our API
@@ -166,7 +182,7 @@ class KiCanvasShellElement extends KCUIElement {
         } catch (e) {
             console.error("Backend API failed:", e);
             this.loading = false;
-            alert(
+            this.showError(
                 "Failed to load schematic. Please ensure the backend is running and the repository exists.",
             );
         }
@@ -182,6 +198,7 @@ class KiCanvasShellElement extends KCUIElement {
 
         this.loaded = false;
         this.loading = true;
+        this.removeAttribute("error");
         this.#current_commit = commit;
 
         try {
@@ -190,7 +207,31 @@ class KiCanvasShellElement extends KCUIElement {
         } catch (e) {
             console.error("Failed to load commit:", e);
             this.loading = false;
+            this.showError(
+                `Failed to load commit ${commit.substring(
+                    0,
+                    7,
+                )}. The commit may not exist or the backend may be unavailable.`,
+            );
         }
+    }
+
+    /**
+     * Show error message
+     */
+    private showError(message: string): void {
+        const errorBar = this.renderRoot.querySelector(".error-bar");
+        if (errorBar) errorBar.textContent = message;
+        this.error = message;
+    }
+
+    /**
+     * Clear error state
+     */
+    private clearError(): void {
+        const errorBar = this.renderRoot.querySelector(".error-bar");
+        if (errorBar) errorBar.textContent = "";
+        this.removeAttribute("error");
     }
 
     private async setup_project(vfs: VirtualFileSystem) {
@@ -262,6 +303,7 @@ class KiCanvasShellElement extends KCUIElement {
                         type="text"
                         placeholder="Paste a GitHub link to your schematic..."
                         autofocus />
+                    <div class="error-bar">${this.error}</div>
                     <p class="drop-hint">or drag & drop your KiCAD files</p>
                     <p class="note">
                         Your files are processed locally in your browser.
@@ -272,7 +314,6 @@ class KiCanvasShellElement extends KCUIElement {
             </kc-ui-app>
         `;
     }
-
 }
 
 window.customElements.define("kc-kicanvas-shell", KiCanvasShellElement);
