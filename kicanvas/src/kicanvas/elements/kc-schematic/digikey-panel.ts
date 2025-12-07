@@ -692,6 +692,14 @@ export class KCSchematicDigiKeyPanelElement extends KCUIElement {
                                 </p>
                             </div>
                         `;
+                    } else {
+                        // Component with MPN selected but search not yet started
+                        content = html`
+                            <div class="loading">
+                                <div class="loading-spinner"></div>
+                                Preparing search...
+                            </div>
+                        `;
                     }
                 } else {
                     content = html`
