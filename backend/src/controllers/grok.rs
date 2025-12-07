@@ -17,6 +17,7 @@ use crate::types::{
 };
 // use kicad_db::PgPool;
 use kicad_db::{
+    messages::{ChatCompletionRequest, Message},
     utilities::load_environment_file::load_environment_file,
     xai_client::{InputMessage, ResponsesRequest, Tool, XaiClient},
     PgPool,
