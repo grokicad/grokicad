@@ -151,6 +151,20 @@ class KiCanvasShellElement extends KCUIElement {
             const detail = (e as CustomEvent).detail;
             await this.loadCommit(detail.repo, detail.commit);
         });
+
+        // Setup example buttons event listeners
+        const grokBtn = this.renderRoot.querySelector(
+            "#grok-watch-btn",
+        ) as HTMLButtonElement;
+        if (grokBtn) {
+            grokBtn.addEventListener("click", (e) => this.loadExample(e));
+        }
+        const ubmsBtn = this.renderRoot.querySelector(
+            "#ubms-btn",
+        ) as HTMLButtonElement;
+        if (ubmsBtn) {
+            ubmsBtn.addEventListener("click", (e) => this.loadExample(e));
+        }
     }
 
     /**
@@ -252,6 +266,22 @@ class KiCanvasShellElement extends KCUIElement {
         }
     }
 
+    private loadExample(e: MouseEvent): void {
+        const button = e.currentTarget as HTMLButtonElement;
+        const repoUrl = button.dataset.repo;
+        if (!repoUrl) return;
+        this.link_input.value = repoUrl;
+        const repo = GrokiAPI.extractRepoFromUrl(repoUrl);
+        if (repo) {
+            this.#current_repo = repo;
+            this.loadViaBackendAPI(repo).then(() => {
+                const location = new URL(window.location.href);
+                location.searchParams.set("github", repoUrl);
+                window.history.pushState(null, "", location);
+            });
+        }
+    }
+
     override render() {
         this.#schematic_app = html`
             <kc-schematic-app controls="full"></kc-schematic-app>
@@ -304,6 +334,19 @@ class KiCanvasShellElement extends KCUIElement {
                         placeholder="Paste a GitHub link to your schematic..."
                         autofocus />
                     <div class="error-bar">${this.error}</div>
+                    <div class="examples">
+                        <h3>Examples</h3>
+                        <button
+                            id="grok-watch-btn"
+                            data-repo="https://github.com/CwbhX/GrokKiCADWatch">
+                            Smart Watch
+                        </button>
+                        <button
+                            id="ubms-btn"
+                            data-repo="https://github.com/CwbhX/uBMS-2">
+                            Battery System
+                        </button>
+                    </div>
                     <p class="drop-hint">or drag & drop your KiCAD files</p>
                 </section>
                 <section class="loading-overlay">
