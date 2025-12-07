@@ -6,3 +6,4 @@ coverage/
 esbuild-meta.json
 
 .DS_Store
+.env

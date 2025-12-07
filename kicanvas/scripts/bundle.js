@@ -7,10 +7,28 @@
 import esbuild from "esbuild";
 import { resolve } from "node:path";
 import { readFile } from "node:fs/promises";
+import { config } from "dotenv";
+
+// Load environment variables from .env file
+config();
 
 export const ENTRY = resolve("src/index.ts");
 
 export async function bundle(options = {}) {
+    // Build API URL from environment variables
+    const backendIp = process.env.BACKEND_IP || "localhost";
+    const backendPort = process.env.BACKEND_PORT || "443";
+    const backendUrl = `http://${backendIp}:${backendPort}`;
+
+    console.log(`[bundle] Using backend URL: ${backendUrl}`);
+
+    // Merge define options from caller with our defaults
+    const mergedDefine = {
+        DEBUG: "false",
+        "process.env.BACKEND_URL": JSON.stringify(backendUrl),
+        ...(options.define || {}),
+    };
+
     options = {
         entryPoints: [ENTRY],
         bundle: true,
@@ -25,11 +43,9 @@ export async function bundle(options = {}) {
             ".svg": "text",
             ".kicad_wks": "text",
         },
-        define: {
-            DEBUG: "false",
-        },
-        plugins: [CSSMinifyPlugin, ESbuildProblemMatcherPlugin],
         ...options,
+        define: mergedDefine,
+        plugins: [CSSMinifyPlugin, ESbuildProblemMatcherPlugin],
     };
     return { options: options, context: await esbuild.context(options) };
 }

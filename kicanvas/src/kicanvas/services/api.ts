@@ -4,11 +4,14 @@
 */
 
 // Configure API base URL - can be overridden for different environments
-// In development, the backend runs on port 443
-// In production, it would be served from the same origin or proxied
-const API_BASE_URL =
-    (window as any).GROKI_API_URL ||
-    (window.location.port === "8001" ? "http://localhost:443/api" : "/api");
+// Uses BACKEND_URL environment variable (set via BACKEND_IP and BACKEND_PORT in .env)
+// Falls back to localhost if not set
+// @ts-ignore - process.env.BACKEND_URL is injected at build time by esbuild
+const API_BASE_URL = process.env.BACKEND_URL
+    ? `${process.env.BACKEND_URL}/api`
+    : "/api";
+
+console.log(`[API] Using backend URL: ${API_BASE_URL}`);
 
 export interface CommitInfo {
     commit_hash: string;
