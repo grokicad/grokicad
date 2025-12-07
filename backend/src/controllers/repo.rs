@@ -269,10 +269,18 @@ pub async fn init_repo(
     };
 
     // Extract counts from distilled data
+    // Components can be a dict (from Python distiller) or an array
     let component_count = distilled
         .get("components")
-        .and_then(|c| c.as_array())
-        .map(|arr| arr.len())
+        .map(|c| {
+            if let Some(obj) = c.as_object() {
+                obj.len()
+            } else if let Some(arr) = c.as_array() {
+                arr.len()
+            } else {
+                0
+            }
+        })
         .unwrap_or(0);
 
     let net_count = distilled

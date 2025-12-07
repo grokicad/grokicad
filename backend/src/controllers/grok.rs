@@ -85,19 +85,39 @@ fn build_component_context(
     distilled: &serde_json::Value,
     component_ids: &[String],
 ) -> (String, String) {
-    let components = distilled
+    // Components can be either:
+    // - An object keyed by reference (from Python distiller): {"U1": {...}, "R1": {...}}
+    // - An array with reference field (alternative format): [{"reference": "U1", ...}, ...]
+    let components: Vec<serde_json::Value> = distilled
         .get("components")
-        .and_then(|c| c.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter(|c| {
-                    c.get("reference")
-                        .and_then(|r| r.as_str())
-                        .map(|r| component_ids.contains(&r.to_string()))
-                        .unwrap_or(false)
-                })
-                .cloned()
-                .collect::<Vec<_>>()
+        .map(|c| {
+            if let Some(obj) = c.as_object() {
+                // Dictionary format: key is reference, value is component data
+                obj.iter()
+                    .filter(|(ref_name, _)| component_ids.contains(&ref_name.to_string()))
+                    .map(|(ref_name, comp_data)| {
+                        // Add reference back into the component object
+                        let mut comp = comp_data.clone();
+                        if let Some(obj) = comp.as_object_mut() {
+                            obj.insert("reference".to_string(), serde_json::Value::String(ref_name.clone()));
+                        }
+                        comp
+                    })
+                    .collect()
+            } else if let Some(arr) = c.as_array() {
+                // Array format: each element has a reference field
+                arr.iter()
+                    .filter(|comp| {
+                        comp.get("reference")
+                            .and_then(|r| r.as_str())
+                            .map(|r| component_ids.contains(&r.to_string()))
+                            .unwrap_or(false)
+                    })
+                    .cloned()
+                    .collect()
+            } else {
+                Vec::new()
+            }
         })
         .unwrap_or_default();
 
@@ -207,20 +227,37 @@ fn build_component_context(
     let nearby_details: Vec<String> = if !nearby_refs.is_empty() {
         distilled
             .get("components")
-            .and_then(|c| c.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|c| {
-                        let reference = c.get("reference").and_then(|r| r.as_str())?;
-                        if nearby_refs.contains(&reference.to_string()) {
-                            let value = c.get("value").and_then(|v| v.as_str()).unwrap_or("?");
-                            let category = c.get("category").and_then(|v| v.as_str()).unwrap_or("?");
-                            Some(format!("{} ({}, {})", reference, value, category))
-                        } else {
-                            None
-                        }
-                    })
-                    .collect()
+            .map(|c| {
+                if let Some(obj) = c.as_object() {
+                    // Dictionary format
+                    obj.iter()
+                        .filter_map(|(reference, comp)| {
+                            if nearby_refs.contains(reference) {
+                                let value = comp.get("value").and_then(|v| v.as_str()).unwrap_or("?");
+                                let category = comp.get("category").and_then(|v| v.as_str()).unwrap_or("?");
+                                Some(format!("{} ({}, {})", reference, value, category))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect()
+                } else if let Some(arr) = c.as_array() {
+                    // Array format
+                    arr.iter()
+                        .filter_map(|comp| {
+                            let reference = comp.get("reference").and_then(|r| r.as_str())?;
+                            if nearby_refs.contains(&reference.to_string()) {
+                                let value = comp.get("value").and_then(|v| v.as_str()).unwrap_or("?");
+                                let category = comp.get("category").and_then(|v| v.as_str()).unwrap_or("?");
+                                Some(format!("{} ({}, {})", reference, value, category))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect()
+                } else {
+                    Vec::new()
+                }
             })
             .unwrap_or_default()
     } else {
@@ -230,8 +267,15 @@ fn build_component_context(
     // Build schematic overview
     let all_components = distilled
         .get("components")
-        .and_then(|c| c.as_array())
-        .map(|arr| arr.len())
+        .map(|c| {
+            if let Some(obj) = c.as_object() {
+                obj.len()
+            } else if let Some(arr) = c.as_array() {
+                arr.len()
+            } else {
+                0
+            }
+        })
         .unwrap_or(0);
 
     let schematic_overview = format!(
