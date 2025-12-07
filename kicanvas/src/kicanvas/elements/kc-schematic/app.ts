@@ -9,6 +9,7 @@ import { KCViewerAppElement } from "../common/app";
 import { KCSchematicViewerElement } from "./viewer";
 
 // import dependent elements so they're registered before use.
+import "./git-panel";
 import "./info-panel";
 import "./properties-panel";
 import "./symbols-panel";
@@ -66,6 +67,14 @@ export class KCSchematicAppElement extends KCViewerAppElement<KCSchematicViewerE
                 name="Properties"
                 icon="list">
                 <kc-schematic-properties-panel></kc-schematic-properties-panel>
+            </kc-ui-activity>`,
+
+            // Git history
+            html`<kc-ui-activity
+                slot="activities"
+                name="Git"
+                icon="history">
+                <kc-schematic-git-panel></kc-schematic-git-panel>
             </kc-ui-activity>`,
 
             // Schematic info
