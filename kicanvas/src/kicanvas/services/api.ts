@@ -101,6 +101,54 @@ export interface CommitInfoResponse {
     changed_files: string[];
 }
 
+export interface DistillResponse {
+    repo: string;
+    commit: string;
+    cached: boolean;
+    distilled: DistilledSchematic;
+}
+
+export interface DistilledSchematic {
+    components: DistilledComponent[];
+    nets: Record<string, Record<string, { Pin: string }[]>>;
+    proximities: ProximityEdge[];
+}
+
+export interface DistilledComponent {
+    reference: string;
+    lib_id: string;
+    value: string;
+    position: { x: number; y: number };
+    footprint: string | null;
+    properties: Record<string, string>;
+    category: string;
+    pins: DistilledPin[];
+    sheet_path?: string;
+}
+
+export interface DistilledPin {
+    number: string;
+    name: string | null;
+    net: string | null;
+}
+
+export interface ProximityEdge {
+    ref_a: string;
+    ref_b: string;
+    distance_mm: number;
+    score: number;
+    category_a: string;
+    category_b: string;
+    weight: number;
+}
+
+export interface GrokSelectionRequest {
+    repo: string;
+    commit: string;
+    component_ids: string[];
+    query: string;
+}
+
 export class GrokiAPI {
     private static baseUrl = API_BASE_URL;
 
@@ -216,6 +264,62 @@ export class GrokiAPI {
             }
             throw e;
         }
+    }
+
+    /**
+     * Get distilled schematic data for a specific commit
+     */
+    static async getDistilledSchematic(
+        repo: string,
+        commit: string,
+    ): Promise<DistilledSchematic> {
+        try {
+            const response = await fetch(`${this.baseUrl}/distill`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ repo, commit }),
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text().catch(() => "");
+                throw new Error(
+                    `Failed to fetch distilled schematic: ${response.status} ${
+                        response.statusText
+                    }${errorText ? ` - ${errorText}` : ""}`,
+                );
+            }
+
+            const data: DistillResponse = await response.json();
+            return data.distilled;
+        } catch (e) {
+            if (e instanceof TypeError && e.message.includes("fetch")) {
+                throw new Error(
+                    `Cannot connect to API at ${this.baseUrl}. Is the backend running?`,
+                );
+            }
+            throw e;
+        }
+    }
+
+    /**
+     * Create an EventSource for streaming Grok selection analysis
+     * Returns the URL to connect to - caller manages the EventSource
+     */
+    static getGrokSelectionStreamUrl(
+        repo: string,
+        commit: string,
+        componentIds: string[],
+        query: string,
+    ): string {
+        const params = new URLSearchParams({
+            repo,
+            commit,
+            query,
+            component_ids: componentIds.join(","),
+        });
+        return `${this.baseUrl}/grok/selection/stream?${params.toString()}`;
     }
 
     /**

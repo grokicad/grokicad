@@ -12,8 +12,8 @@ import {
     type ZoneConnection,
 } from "../../../viewers/base/events";
 import type { Viewer } from "../../../viewers/base/viewer";
-import "./grok-chat-panel";
-import type { KCGrokChatPanelElement } from "./grok-chat-panel";
+import "../grok/grok-chat-panel";
+import { KCGrokChatPanelElement } from "../grok";
 
 /** Item with a uuid property */
 interface UuidItem {
@@ -42,6 +42,9 @@ export interface GrokPayload {
     bounds: { x: number; y: number; w: number; h: number };
     timestamp: number;
 }
+
+// Singleton reference to the chat panel
+let globalChatPanel: KCGrokChatPanelElement | null = null;
 
 export class KCGrokButtonElement extends KCUIElement {
     static override styles = [
@@ -96,7 +99,7 @@ export class KCGrokButtonElement extends KCUIElement {
             /* Glow effect when selection is active */
             :host([has-selection]) .grok-button {
                 border-color: rgba(255, 255, 255, 0.5);
-                box-shadow: 
+                box-shadow:
                     0 0 10px rgba(255, 255, 255, 0.3),
                     0 0 20px rgba(255, 255, 255, 0.15),
                     0 0 30px rgba(255, 255, 255, 0.1);
@@ -104,16 +107,17 @@ export class KCGrokButtonElement extends KCUIElement {
             }
 
             @keyframes glow-pulse {
-                0%, 100% {
+                0%,
+                100% {
                     border-color: rgba(255, 255, 255, 0.5);
-                    box-shadow: 
+                    box-shadow:
                         0 0 10px rgba(255, 255, 255, 0.3),
                         0 0 20px rgba(255, 255, 255, 0.15),
                         0 0 30px rgba(255, 255, 255, 0.1);
                 }
                 50% {
                     border-color: rgba(255, 255, 255, 0.8);
-                    box-shadow: 
+                    box-shadow:
                         0 0 15px rgba(255, 255, 255, 0.5),
                         0 0 30px rgba(255, 255, 255, 0.25),
                         0 0 45px rgba(255, 255, 255, 0.15),
@@ -123,7 +127,7 @@ export class KCGrokButtonElement extends KCUIElement {
 
             /* Animated border gradient when has selection */
             :host([has-selection]) .grok-button::before {
-                content: '';
+                content: "";
                 position: absolute;
                 top: -3px;
                 left: -3px;
@@ -155,7 +159,7 @@ export class KCGrokButtonElement extends KCUIElement {
 
             /* Inner background to create border effect */
             :host([has-selection]) .grok-button::after {
-                content: '';
+                content: "";
                 position: absolute;
                 top: 0;
                 left: 0;
@@ -277,12 +281,12 @@ export class KCGrokButtonElement extends KCUIElement {
         } else {
             this.removeAttribute("has-selection");
         }
-        
+
         // Update tooltip text
         const tooltip = this.renderRoot.querySelector(".tooltip");
         if (tooltip) {
-            tooltip.textContent = this.#hasSelection 
-                ? "Ask Grok AI about selection" 
+            tooltip.textContent = this.#hasSelection
+                ? "Ask Grok AI about selection"
                 : "Select components to ask Grok";
         }
     }
@@ -316,37 +320,69 @@ export class KCGrokButtonElement extends KCUIElement {
     }
 
     #onClick() {
-        // Don't proceed if no selection
-        if (!this.#hasSelection) {
-            console.log("Grok button clicked but no selection - ignoring");
-            return;
-        }
-
         const payload = this.#buildPayload();
 
         // Log the payload to console
         console.log("=== GROK BUTTON CLICKED ===");
         console.log("Selected Items Count:", payload.selectedItems.length);
-        console.log("Selected Item UIDs:", payload.selectedItems.map((i) => i.uuid));
+        console.log(
+            "Selected Item UIDs:",
+            payload.selectedItems.map((i) => i.uuid),
+        );
         console.log("Full Payload:", payload);
-        console.log("JSON Payload:", JSON.stringify(payload, null, 2));
         console.log("===========================");
 
-        // Find or create chat panel
-        let chatPanel = document.querySelector("kc-grok-chat-panel") as KCGrokChatPanelElement | null;
-        
-        if (!chatPanel) {
-            // Use innerHTML to ensure proper custom element upgrade
-            const container = document.createElement("div");
-            container.innerHTML = "<kc-grok-chat-panel></kc-grok-chat-panel>";
-            chatPanel = container.firstElementChild as KCGrokChatPanelElement;
-            document.body.appendChild(chatPanel);
-            // Wait for initialContentCallback to complete before showing
-            // The base CustomElement runs it in an async IIFE, resolved after rAF
-            requestAnimationFrame(() => chatPanel!.show());
+        // Convert payload items to the format expected by chat panel
+        // Filter out items without a valid reference (wires, labels, etc.)
+        const selectedComponents = payload.selectedItems
+            .filter((item) => item.reference && item.reference.trim() !== "")
+            .map((item) => ({
+                uuid: item.uuid,
+                reference: item.reference!,
+                value: item.value ?? "",
+                type: item.type,
+            }));
+
+        // Ensure panel exists
+        if (!globalChatPanel || !globalChatPanel.isConnected) {
+            // Remove any stale panels
+            document
+                .querySelectorAll("kc-grok-chat-panel")
+                .forEach((el) => el.remove());
+
+            // Create new panel using innerHTML to ensure proper custom element upgrade
+            const wrapper = document.createElement("div");
+            wrapper.innerHTML = "<kc-grok-chat-panel></kc-grok-chat-panel>";
+            globalChatPanel =
+                wrapper.firstElementChild as KCGrokChatPanelElement;
+            document.body.appendChild(globalChatPanel);
+
+            // Wait for the element to be ready before interacting with it
+            requestAnimationFrame(() => {
+                if (globalChatPanel) {
+                    // Pass viewer reference so panel can listen for events
+                    if (this.viewer) {
+                        globalChatPanel.setViewer(this.viewer);
+                    }
+                    globalChatPanel.setSelectedComponents(selectedComponents);
+                    globalChatPanel.show();
+                }
+            });
+            return;
+        }
+
+        // Pass viewer if not already set
+        if (this.viewer) {
+            globalChatPanel.setViewer(this.viewer);
+        }
+
+        // Update components and show/toggle
+        globalChatPanel.setSelectedComponents(selectedComponents);
+
+        if (globalChatPanel.visible) {
+            // If already visible, just update (components already set above)
         } else {
-            // Panel already exists and is initialized, show immediately
-            chatPanel.show();
+            globalChatPanel.show();
         }
 
         // Dispatch event with payload for external consumers

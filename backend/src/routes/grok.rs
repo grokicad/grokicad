@@ -1,8 +1,11 @@
-use axum::{routing::{get, post}, Router};
+use axum::{
+    routing::{get, post},
+    Router,
+};
 use std::sync::Arc;
 
 use crate::controllers::grok::{
-    chat_stream, find_replacement, summarize_commit, summarize_repo, summarize_selection,
+    chat_stream, find_replacement, selection_stream, summarize_commit, summarize_repo, summarize_selection,
 };
 
 pub fn router() -> Router<Arc<sqlx::PgPool>> {
@@ -12,4 +15,5 @@ pub fn router() -> Router<Arc<sqlx::PgPool>> {
         .route("/summary/repo", post(summarize_repo))
         .route("/obsolete/replacement", post(find_replacement))
         .route("/chat/stream", get(chat_stream))
+        .route("/selection/stream", post(selection_stream))
 }

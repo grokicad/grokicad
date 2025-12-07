@@ -223,7 +223,9 @@ export class SchematicViewer extends DocumentViewer<
             NetLabel | GlobalLabel | HierarchicalLabel
         >();
         for (const label of labels) {
-            const key = `${label.at.position.x.toFixed(3)},${label.at.position.y.toFixed(3)}`;
+            const key = `${label.at.position.x.toFixed(
+                3,
+            )},${label.at.position.y.toFixed(3)}`;
             labelsByPosition.set(key, label);
         }
 
@@ -276,7 +278,9 @@ export class SchematicViewer extends DocumentViewer<
                 // Find other pins connected through these wires
                 for (const wire of wiresAtPin) {
                     for (const pt of wire.pts) {
-                        const otherKey = `${pt.x.toFixed(3)},${pt.y.toFixed(3)}`;
+                        const otherKey = `${pt.x.toFixed(3)},${pt.y.toFixed(
+                            3,
+                        )}`;
                         if (otherKey === posKey) continue;
 
                         const otherPins = pinConnections.get(otherKey);
@@ -287,7 +291,8 @@ export class SchematicViewer extends DocumentViewer<
                                     (c) =>
                                         (c.from === pin.symbol.reference &&
                                             c.fromPin === pin.pin.number &&
-                                            c.to === otherPin.symbol.reference &&
+                                            c.to ===
+                                                otherPin.symbol.reference &&
                                             c.toPin === otherPin.pin.number) ||
                                         (c.to === pin.symbol.reference &&
                                             c.toPin === pin.pin.number &&
@@ -300,7 +305,9 @@ export class SchematicViewer extends DocumentViewer<
                                     // Try to find net name from labels on the wire
                                     let netName: string | undefined;
                                     for (const wpt of wire.pts) {
-                                        const lKey = `${wpt.x.toFixed(3)},${wpt.y.toFixed(3)}`;
+                                        const lKey = `${wpt.x.toFixed(
+                                            3,
+                                        )},${wpt.y.toFixed(3)}`;
                                         const label =
                                             labelsByPosition.get(lKey);
                                         if (label) {
@@ -371,6 +378,30 @@ export class SchematicViewer extends DocumentViewer<
     }
 
     /**
+     * Find an item by UUID (override from base Viewer)
+     */
+    public override find_item_by_uuid(uuid: string): unknown {
+        if (!this.schematic) {
+            return null;
+        }
+
+        // Check symbols
+        const symbol = this.schematic.symbols.get(uuid);
+        if (symbol) {
+            return symbol;
+        }
+
+        // Check sheets
+        for (const sheet of this.schematic.sheets) {
+            if (sheet.uuid === uuid) {
+                return sheet;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Get bounding boxes for schematic items
      */
     protected override get_bboxes_for_items(items: unknown[]): BBox[] {
@@ -389,9 +420,7 @@ export class SchematicViewer extends DocumentViewer<
     /**
      * Get symbol data for external use
      */
-    public get_symbol_data(
-        symbol: SchematicSymbol,
-    ): {
+    public get_symbol_data(symbol: SchematicSymbol): {
         uuid: string;
         reference: string;
         value: string;

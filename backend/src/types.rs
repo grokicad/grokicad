@@ -200,6 +200,20 @@ pub struct GrokSelectionSummaryRequest {
     pub component_ids: Vec<String>,
 }
 
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct GrokSelectionStreamRequest {
+    /// GitHub repository in "owner/repo" format
+    pub repo: String,
+    /// Full commit hash
+    pub commit: String,
+    /// List of component IDs (references) to analyze
+    pub component_ids: Vec<String>,
+    /// User's query about the components
+    pub query: String,
+    /// Pre-distilled schematic data (optional - will fetch if not provided)
+    pub distilled: Option<serde_json::Value>,
+}
+
 #[derive(Debug, Serialize, ToSchema)]
 pub struct GrokSelectionSummaryResponse {
     /// GitHub repository in "owner/repo" format

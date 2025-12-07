@@ -47,6 +47,10 @@ export abstract class Viewer extends EventTarget {
 
     // Hover tracking
     #hovered_item: unknown = null;
+
+    // External hover highlight (for chat panel integration)
+    #external_hover_item: unknown = null;
+    #external_hover_bbox: BBox | null = null;
     #last_screen_position: { x: number; y: number } = { x: 0, y: 0 };
     #hover_check_pending = false;
 
@@ -321,7 +325,7 @@ export abstract class Viewer extends EventTarget {
 
         // Repaint with the new selection
         this.paint_zone_selection();
-        
+
         // Always dispatch zone selection event (including deselection)
         this.dispatch_zone_selection_event();
     }
@@ -366,6 +370,17 @@ export abstract class Viewer extends EventTarget {
             this.zone_selected_bboxes = [];
             this.paint_zone_selection();
         }
+    }
+
+    /**
+     * Set zone selection from external source (e.g., chat panel)
+     * This allows the panel to sync its selection back to the viewer
+     */
+    public set_zone_selection(items: unknown[]) {
+        this.zone_selected_items = items;
+        this.zone_selected_bboxes = this.get_bboxes_for_items(items);
+        this.paint_zone_selection();
+        // Don't dispatch event to avoid infinite loop - the caller already knows
     }
 
     public select(item: BBox | null) {
@@ -464,10 +479,7 @@ export abstract class Viewer extends EventTarget {
         );
 
         // Only trigger zone selection if the box is big enough
-        if (
-            this.#zone_selection_box.w > 1 &&
-            this.#zone_selection_box.h > 1
-        ) {
+        if (this.#zone_selection_box.w > 1 && this.#zone_selection_box.h > 1) {
             this.complete_zone_selection();
         }
 
@@ -581,12 +593,7 @@ export abstract class Viewer extends EventTarget {
 
     /** Check if two bboxes intersect */
     protected bbox_intersects(a: BBox, b: BBox): boolean {
-        return !(
-            a.x2 < b.x ||
-            b.x2 < a.x ||
-            a.y2 < b.y ||
-            b.y2 < a.y
-        );
+        return !(a.x2 < b.x || b.x2 < a.x || a.y2 < b.y || b.y2 < a.y);
     }
 
     /** Override in subclass to analyze connections between items */
@@ -602,13 +609,57 @@ export abstract class Viewer extends EventTarget {
         return new Color(0.3, 0.8, 1, 1); // Cyan color for zone selection
     }
 
+    public get hover_highlight_color() {
+        return new Color(1, 0.8, 0.3, 1); // Gold/yellow color for hover highlight
+    }
+
+    /**
+     * Set an external hover highlight on an item (e.g., from chat panel card hover)
+     * @param item The item to highlight, or null to clear
+     */
+    public set_external_hover(item: unknown): void {
+        if (item === this.#external_hover_item) {
+            return;
+        }
+
+        this.#external_hover_item = item;
+
+        if (item && this.layers) {
+            // Find the bounding box for this item
+            const bboxes = this.layers.query_item_bboxes(item);
+            // query_item_bboxes is a generator, get first result
+            const first = bboxes.next();
+            this.#external_hover_bbox = first.done ? null : first.value;
+        } else {
+            this.#external_hover_bbox = null;
+        }
+
+        this.paint_zone_selection();
+    }
+
+    /**
+     * Clear external hover highlight
+     */
+    public clear_external_hover(): void {
+        this.set_external_hover(null);
+    }
+
+    /**
+     * Find an item by UUID
+     */
+    public find_item_by_uuid(uuid: string): unknown {
+        // Override in subclasses to implement item lookup
+        return null;
+    }
+
     protected paint_zone_selection() {
         const layer = this.layers.overlay;
         layer.clear();
 
         const hasContent =
             this.zone_selected_bboxes.length > 0 ||
-            (this.#zone_selection_box && this.zone_selection_active);
+            (this.#zone_selection_box && this.zone_selection_active) ||
+            this.#external_hover_bbox !== null;
 
         if (!hasContent) {
             this.draw();
@@ -628,10 +679,25 @@ export abstract class Viewer extends EventTarget {
                 // Draw filled rectangle
                 this.renderer.polygon(Polygon.from_BBox(bb, selectColor));
                 // Draw border
-                this.renderer.line(
-                    Polyline.from_BBox(bb, 0.3, selectStroke),
-                );
+                this.renderer.line(Polyline.from_BBox(bb, 0.3, selectStroke));
             }
+        }
+
+        // Paint external hover highlight (from chat panel)
+        if (this.#external_hover_bbox) {
+            const hoverColor = this.hover_highlight_color.with_alpha(0.4);
+            const hoverStroke = this.hover_highlight_color;
+
+            const bb = this.#external_hover_bbox
+                .copy()
+                .grow(
+                    Math.max(
+                        this.#external_hover_bbox.w,
+                        this.#external_hover_bbox.h,
+                    ) * 0.08,
+                );
+            this.renderer.polygon(Polygon.from_BBox(bb, hoverColor));
+            this.renderer.line(Polyline.from_BBox(bb, 0.4, hoverStroke));
         }
 
         // Paint zone selection box if actively dragging

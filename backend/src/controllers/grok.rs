@@ -10,11 +10,16 @@ use futures_util::{stream::Stream, StreamExt};
 use std::{convert::Infallible, sync::Arc, time::Duration};
 use tracing::{error, info};
 
-use crate::services::git;
+use crate::services::{distill, git};
 use crate::types::{
+<<<<<<< HEAD
     ApiError, GrokCommitSummaryRequest, GrokCommitSummaryResponse,
     GrokObsoleteReplacementRequest, GrokObsoleteReplacementResponse,
     GrokRepoSummaryRequest, GrokRepoSummaryResponse, GrokSelectionSummaryRequest,
+=======
+    ApiError, GrokCommitSummaryRequest, GrokCommitSummaryResponse, GrokRepoSummaryRequest,
+    GrokRepoSummaryResponse, GrokSelectionStreamRequest, GrokSelectionSummaryRequest,
+>>>>>>> 450b292 (sidebar)
     GrokSelectionSummaryResponse,
 };
 // use kicad_db::PgPool;
@@ -576,6 +581,211 @@ pub async fn chat_stream(
             "Give me a brief overview of what to look for when reviewing a KiCad schematic for an embedded system.".to_string()
         ),
     ];
+
+    // Create chat completion request with streaming
+    let chat_request =
+        ChatCompletionRequest::with_stream(messages, "grok-3-fast".to_string(), true);
+
+    // Get the stream
+    let stream = xai_client
+        .chat_completion_stream(&chat_request)
+        .await
+        .map_err(|e| {
+            error!("Failed to create XAI stream: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiError::internal(format!(
+                    "Failed to start AI stream: {}",
+                    e
+                ))),
+            )
+        })?;
+
+    // Convert the stream to SSE events
+    let sse_stream = async_stream::stream! {
+        tokio::pin!(stream);
+
+        while let Some(result) = stream.next().await {
+            match result {
+                Ok(content) => {
+                    yield Ok(Event::default().data(content));
+                }
+                Err(e) => {
+                    error!("Stream error: {}", e);
+                    yield Ok(Event::default().data(format!("[ERROR: {}]", e)));
+                    break;
+                }
+            }
+        }
+
+        // Send a done event
+        yield Ok(Event::default().data("[DONE]"));
+    };
+
+    Ok(Sse::new(sse_stream).keep_alive(
+        axum::response::sse::KeepAlive::new()
+            .interval(Duration::from_secs(15))
+            .text("keep-alive"),
+    ))
+}
+
+/// Stream an AI analysis of selected components using Server-Sent Events
+#[utoipa::path(
+    post,
+    path = "/api/grok/selection/stream",
+    request_body = GrokSelectionStreamRequest,
+    responses(
+        (status = 200, description = "Streaming AI analysis response via SSE"),
+        (status = 500, description = "Internal server error", body = ApiError)
+    ),
+    tag = "grok"
+)]
+pub async fn selection_stream(
+    State(state): State<AppState>,
+    Json(req): Json<GrokSelectionStreamRequest>,
+) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, (StatusCode, Json<ApiError>)> {
+    info!(
+        "Grok selection_stream called for {}/{} with {} components",
+        req.repo,
+        req.commit,
+        req.component_ids.len()
+    );
+
+    // Load environment file to get XAI_API_KEY
+    load_environment_file(None).map_err(|e| {
+        error!("Failed to load environment file: {}", e);
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiError::internal(format!(
+                "Failed to load environment: {}",
+                e
+            ))),
+        )
+    })?;
+
+    // Create XAI client
+    let xai_client = XaiClient::new().map_err(|e| {
+        error!("Failed to create XAI client: {}", e);
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiError::internal(format!(
+                "Failed to initialize XAI client: {}",
+                e
+            ))),
+        )
+    })?;
+
+    // Get distilled schematic data - either from request or fetch it
+    let distilled = if let Some(d) = req.distilled {
+        d
+    } else {
+        // Fetch distilled data from cache or generate it
+        let repo_url = format!("https://github.com/{}.git", req.repo);
+        match kicad_db::retrieve_distilled_json(&state, &repo_url, &req.commit).await {
+            Ok(Some(cached)) => cached,
+            _ => {
+                // Generate if not cached
+                distill::distill_repo_schematics(&req.repo, &req.commit)
+                    .await
+                    .map_err(|e| {
+                        error!("Failed to distill schematic: {}", e);
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(ApiError::internal(format!(
+                                "Failed to distill schematic: {}",
+                                e
+                            ))),
+                        )
+                    })?
+            }
+        }
+    };
+
+    // Extract relevant component info from distilled data
+    let components = distilled
+        .get("components")
+        .and_then(|c| c.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter(|c| {
+                    c.get("reference")
+                        .and_then(|r| r.as_str())
+                        .map(|r| req.component_ids.contains(&r.to_string()))
+                        .unwrap_or(false)
+                })
+                .cloned()
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    // Build context string for selected components
+    let selected_context = if components.is_empty() {
+        "No specific components selected.".to_string()
+    } else {
+        let component_summaries: Vec<String> = components
+            .iter()
+            .map(|c| {
+                let reference = c.get("reference").and_then(|v| v.as_str()).unwrap_or("?");
+                let value = c.get("value").and_then(|v| v.as_str()).unwrap_or("?");
+                let lib_id = c.get("lib_id").and_then(|v| v.as_str()).unwrap_or("?");
+                let category = c
+                    .get("category")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("other");
+                let pins = c
+                    .get("pins")
+                    .and_then(|p| p.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|pin| {
+                                let num = pin.get("number").and_then(|v| v.as_str())?;
+                                let net = pin.get("net").and_then(|v| v.as_str()).unwrap_or("NC");
+                                Some(format!("pin {} -> {}", num, net))
+                            })
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    })
+                    .unwrap_or_default();
+                format!(
+                    "- {} ({}): {} [{}] | Pins: {}",
+                    reference, lib_id, value, category, pins
+                )
+            })
+            .collect();
+        format!("Selected components:\n{}", component_summaries.join("\n"))
+    };
+
+    // Build a summary of the full schematic context
+    let schematic_summary = {
+        let all_components = distilled
+            .get("components")
+            .and_then(|c| c.as_array())
+            .map(|arr| arr.len())
+            .unwrap_or(0);
+        let nets = distilled
+            .get("nets")
+            .and_then(|n| n.as_object())
+            .map(|obj| obj.len())
+            .unwrap_or(0);
+        format!(
+            "Schematic contains {} total components and {} nets.",
+            all_components, nets
+        )
+    };
+
+    // Build system and user messages
+    let system_prompt = format!(
+        "You are Grok, an expert AI assistant specialized in electronics and PCB design. \
+        You help users understand KiCad schematics, components, and circuit design. \
+        Be concise but informative. Use technical terms when appropriate.\n\n\
+        Context about the schematic:\n{}\n\n\
+        Full distilled schematic data is available for reference.",
+        schematic_summary
+    );
+
+    let user_prompt = format!("{}\n\nUser's question: {}", selected_context, req.query);
+
+    let messages = vec![Message::system(system_prompt), Message::user(user_prompt)];
 
     // Create chat completion request with streaming
     let chat_request =

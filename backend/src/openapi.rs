@@ -6,8 +6,8 @@ use crate::types::{
     CommitInfoResponse, DigiKeyParameter, DigiKeyPartInfo, DigiKeySearchRequest,
     DigiKeySearchResponse, DistillRequest, DistillResponse, GrokCommitSummaryRequest,
     GrokCommitSummaryResponse, GrokRepoSummaryRequest, GrokRepoSummaryResponse,
-    GrokSelectionSummaryRequest, GrokSelectionSummaryResponse, HookUpdateResponse,
-    RepoCommitsRequest, RepoCommitsResponse, SchematicFile,
+    GrokSelectionStreamRequest, GrokSelectionSummaryRequest, GrokSelectionSummaryResponse,
+    HookUpdateResponse, RepoCommitsRequest, RepoCommitsResponse, SchematicFile,
 };
 
 #[derive(OpenApi)]
@@ -28,6 +28,7 @@ use crate::types::{
         grok::summarize_selection,
         grok::summarize_repo,
         grok::chat_stream,
+        grok::selection_stream,
         distill::distill_schematics,
         digikey::search_parts,
         digikey::get_status,
@@ -44,6 +45,7 @@ use crate::types::{
         HookUpdateResponse,
         GrokCommitSummaryRequest,
         GrokCommitSummaryResponse,
+        GrokSelectionStreamRequest,
         GrokSelectionSummaryRequest,
         GrokSelectionSummaryResponse,
         GrokRepoSummaryRequest,
