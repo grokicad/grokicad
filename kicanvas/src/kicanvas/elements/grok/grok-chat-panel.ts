@@ -397,6 +397,7 @@ export class KCGrokChatPanelElement extends KCUIElement {
             }),
         );
 
+
         // Toggle collapsible controls section
         this.addDisposable(
             delegate(root, ".controls-toggle", "click", () => {
@@ -950,6 +951,7 @@ export class KCGrokChatPanelElement extends KCUIElement {
             this._shouldAutoScroll = isNearBottom;
         }
     }
+
 
     // =========================================================================
     // Rendering Helpers

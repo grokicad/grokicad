@@ -12,6 +12,7 @@ import {
 } from "../../../viewers/base/events";
 import type { Viewer } from "../../../viewers/base/viewer";
 import type { Project } from "../../project";
+import { grokAPI } from "../../elements/grok/grok-api-service";
 
 export class KCViewerBottomToolbarElement extends KCUIElement {
     static override styles = [
@@ -35,15 +36,29 @@ export class KCViewerBottomToolbarElement extends KCUIElement {
 
     viewer: Viewer;
     project: Project;
+    #repoInfo: { repo: string | null; commit: string | null };
     #position_elm: HTMLOutputElement;
     #zoom_to_page_btn: KCUIButtonElement;
     #zoom_to_selection_btn: KCUIButtonElement;
     #download_btn: KCUIButtonElement;
+    #clear_cache_btn: KCUIButtonElement;
 
     override connectedCallback() {
         (async () => {
             this.viewer = await this.requestLazyContext("viewer");
             this.project = await this.requestContext("project");
+
+            // Get repo info context
+            try {
+                this.#repoInfo = (await this.requestLazyContext("repoInfo")) as {
+                    repo: string | null;
+                    commit: string | null;
+                };
+            } catch {
+                // No repo info available (local file)
+                this.#repoInfo = { repo: null, commit: null };
+            }
+
             await this.viewer.loaded;
 
             super.connectedCallback();
@@ -76,6 +91,22 @@ export class KCViewerBottomToolbarElement extends KCUIElement {
                 e.preventDefault();
                 if (this.project.active_page) {
                     this.project.download(this.project.active_page.filename);
+                }
+            });
+
+            this.#clear_cache_btn.addEventListener("click", async (e) => {
+                e.preventDefault();
+                if (this.#repoInfo.repo) {
+                    try {
+                        this.#clear_cache_btn.disabled = true;
+                        await grokAPI.clearServerCache(this.#repoInfo.repo);
+                        // Could show a toast notification here, but for now just re-enable
+                        console.log("Cache cleared successfully");
+                    } catch (err) {
+                        console.error("Failed to clear cache:", err);
+                    } finally {
+                        this.#clear_cache_btn.disabled = false;
+                    }
                 }
             });
         })();
@@ -118,11 +149,19 @@ export class KCViewerBottomToolbarElement extends KCUIElement {
             disabled>
         </kc-ui-button>` as KCUIButtonElement;
 
+        this.#clear_cache_btn = html`<kc-ui-button
+            slot="right"
+            variant="toolbar"
+            name="clear_cache"
+            title="clear grok cache"
+            icon="delete">
+        </kc-ui-button>` as KCUIButtonElement;
+
         this.update_position();
 
         return html`<kc-ui-floating-toolbar location="bottom">
             ${this.#position_elm} ${this.#download_btn} ${this.#zoom_to_selection_btn}
-            ${this.#zoom_to_page_btn}
+            ${this.#zoom_to_page_btn} ${this.#clear_cache_btn}
         </kc-ui-floating-toolbar>`;
     }
 }
