@@ -17,9 +17,8 @@ use crate::types::{
 };
 // use kicad_db::PgPool;
 use kicad_db::{
-    messages::{ChatCompletionRequest, Message},
     utilities::load_environment_file::load_environment_file,
-    xai_client::XaiClient,
+    xai_client::{InputMessage, ResponsesRequest, Tool, XaiClient},
     PgPool,
 };
 
@@ -72,23 +71,29 @@ pub async fn summarize_commit(
         github_url
     );
 
-    // Create messages for XAI API
-    let messages = vec![
-        Message::system("You are a helpful assistant".to_string()),
-        Message::user(user_message),
-    ];
 
-    // Create chat completion request with hardcoded model
-    let chat_request = ChatCompletionRequest::new(messages, "grok-4-1-fast-reasoning".to_string());
+    // Create input message for responses API
+    let input = vec![InputMessage::user(user_message)];
 
-    // Make API call
-    let api_response = xai_client.chat_completion(&chat_request).await.map_err(|e| {
+    // Create tools - use both web_search and x_search for comprehensive results
+    let tools = vec![Tool::web_search(), Tool::x_search()];
+
+    // Create responses request with hardcoded model
+    let responses_request = ResponsesRequest::new(
+        "grok-4-1-fast".to_string(),
+        input,
+        tools,
+    );
+
+    // Make API call using responses endpoint
+    let api_response = xai_client.responses(&responses_request).await.map_err(|e| {
         error!("XAI API call failed: {}", e);
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ApiError::internal(format!("Failed to get AI summary: {}", e))),
         )
     })?;
+
 
     // TODO: Implement this or not.
     // Get changed files for context
@@ -104,23 +109,60 @@ pub async fn summarize_commit(
     //         )
     //     })?;
 
-    // Extract response content
-    let summary = api_response
-        .choices
-        .first()
-        .and_then(|choice| choice.message.as_ref())
-        .and_then(|msg| msg.content.as_ref())
-        .cloned()
-        .unwrap_or_else(|| "No response content available".to_string());
 
-    // Use the same content for both summary and details for now
-    // You can split this later if needed
-    let details = summary.clone();
+    // Extract response content from tool results
+    // The responses API returns tool call results, so we need to extract meaningful information
+    let summary = if let Some(output) = &api_response.output {
+        // Try to extract text from tool results
+        let mut result_parts = Vec::new();
+        
+        for item in output {
+            if let Some(name) = &item.name {
+                result_parts.push(format!("Tool: {}", name));
+            }
+            if let Some(status) = &item.status {
+                result_parts.push(format!("Status: {}", status));
+            }
+            if let Some(result) = &item.result {
+                result_parts.push(format!("Result: {}", serde_json::to_string(result).unwrap_or_else(|_| "N/A".to_string())));
+            }
+            if let Some(content) = &item.content {
+                result_parts.push(format!("Content: {}", serde_json::to_string(content).unwrap_or_else(|_| "N/A".to_string())));
+            }
+        }
+        
+        if result_parts.is_empty() {
+            format!(
+                "Found {} tool result(s) for commit {}/{}",
+                output.len(),
+                req.repo,
+                req.commit
+            )
+        } else {
+            result_parts.join("\n")
+        }
+    } else {
+        format!(
+            "No results returned for commit {}/{}",
+            req.repo,
+            req.commit
+        )
+    };
+
+    // For details, include more information about the response
+    let details = format!(
+        "Response ID: {:?}\nModel: {:?}\nTool Results: {}\n\n{}",
+        api_response.id,
+        api_response.model,
+        api_response.output.as_ref().map(|o| o.len()).unwrap_or(0),
+        summary
+    );
 
     info!(
         "Successfully generated summary for {}/{}",
         req.repo, req.commit
     );
+
 
     // Mock response - TODO: integrate with actual Grok API
     // let summary = format!(
