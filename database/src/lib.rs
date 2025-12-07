@@ -1,9 +1,11 @@
-use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use chrono::{DateTime, Utc};
-use sqlx::{PgPool, Row, Error};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sqlx::{Error, Row};
 use std::collections::HashMap;
+use uuid::Uuid;
+
+pub use sqlx::PgPool;
 
 pub mod messages;
 pub mod utilities;
@@ -71,7 +73,7 @@ pub async fn store_schematic(
     project_overview: Option<&str>,
     blurb: Option<&str>,
     description: Option<&str>,
-    parts: HashMap<Uuid, (Option<String>, Value)>,  // part_uuid -> (blurb, properties)
+    parts: HashMap<Uuid, (Option<String>, Value)>, // part_uuid -> (blurb, properties)
 ) -> Result<i32, Error> {
     let mut tx = pool.begin().await?;
 
@@ -113,7 +115,7 @@ pub async fn store_schematic(
             ON CONFLICT (schematic_id, part_uuid) DO UPDATE SET
                 blurb = EXCLUDED.blurb,
                 properties = EXCLUDED.properties
-            "#
+            "#,
         )
         .bind(schematic_id)
         .bind(part_uuid)
@@ -133,18 +135,20 @@ pub async fn retrieve_schematic(
     commit_hash: &str,
 ) -> Result<Option<FullSchematic>, Error> {
     let schematic = sqlx::query_as::<_, Schematic>(
-        "SELECT * FROM schematics WHERE repo_url = $1 AND commit_hash = $2"
+        "SELECT * FROM schematics WHERE repo_url = $1 AND commit_hash = $2",
     )
     .bind(repo_url)
     .bind(commit_hash)
     .fetch_optional(pool)
     .await?;
 
-    let Some(sch) = schematic else { return Ok(None); };
+    let Some(sch) = schematic else {
+        return Ok(None);
+    };
 
     let mut parts_map: HashMap<Uuid, FullPart> = HashMap::new();
     let rows = sqlx::query_as::<_, FullPart>(
-        "SELECT part_uuid, blurb, properties FROM parts WHERE schematic_id = $1"
+        "SELECT part_uuid, blurb, properties FROM parts WHERE schematic_id = $1",
     )
     .bind(sch.id)
     .fetch_all(pool)
@@ -173,14 +177,15 @@ pub async fn retrieve_schematic(
 pub async fn find_schematics_by_part(
     pool: &PgPool,
     part_uuid: Uuid,
-) -> Result<Vec<(String, String)>, Error> {  // (repo_url, commit_hash)
+) -> Result<Vec<(String, String)>, Error> {
+    // (repo_url, commit_hash)
     let rows = sqlx::query(
         r#"
         SELECT DISTINCT s.repo_url, s.commit_hash
         FROM schematics s
         JOIN parts p ON s.id = p.schematic_id
         WHERE p.part_uuid = $1
-        "#
+        "#,
     )
     .bind(part_uuid)
     .fetch_all(pool)
