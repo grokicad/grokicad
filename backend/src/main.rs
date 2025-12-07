@@ -1,22 +1,25 @@
+use anyhow::Context;
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::Json,
     routing::{get, post},
     Router,
 };
+use chrono::{DateTime, TimeZone, Utc};
+use git2::build::RepoBuilder;
+use git2::{
+    Blob, Commit, DiffDelta, DiffOptions, ObjectType, Repository, Sort, TreeWalkMode,
+    TreeWalkResult,
+};
 use kicad_db::{create_pool, retrieve_schematic, store_schematic};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use sqlx::PgPool;
 use std::collections::HashMap;
 use std::sync::Arc;
-use chrono::{DateTime, Utc, TimeZone};
-use git2::{Repository, Commit, ObjectType, DiffOptions, TreeWalkMode, TreeWalkResult, Sort, Blob, DiffDelta};
-use git2::build::RepoBuilder;
-use anyhow::Context;
+use tracing::{error, info};
 use uuid::Uuid;
-use serde_json::json;
-use tracing::{info, error};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CommitResponse {
@@ -45,21 +48,22 @@ type AppState = Arc<PgPool>;
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt().init();
 
-    let pool = create_pool().await
+    let pool = create_pool()
+        .await
         .context("Failed to create database pool")?;
 
     let app_state = Arc::new(pool);
 
     let app = Router::new()
-        .route("/api/:repo/commits", get(get_commits))
-        .route("/api/:repo/create", post(create_overviews))
-        .route("/api/:repo/:commit/overview", get(get_overview))
+        .route("/api/commits/*repo", get(get_commits))
+        .route("/api/create/*repo", post(create_overviews))
+        .route("/api/overview/:commit/*repo", get(get_overview))
         .layer(tower_http::trace::TraceLayer::new_for_http())
         .layer(tower_http::cors::CorsLayer::permissive()) // For development
         .with_state(app_state);
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
-    info!("Server listening on 0.0.0.0:3000");
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:443").await?;
+    info!("Server listening on 0.0.0.0:443");
 
     axum::serve(listener, app).await?;
 
@@ -70,6 +74,7 @@ async fn get_commits(
     Path(repo): Path<String>,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<CommitResponse>>, StatusCode> {
+    let repo = repo.trim_start_matches('/');
     let repo_url = format!("https://github.com/{}.git", repo);
     let commits = match fetch_relevant_commits(&repo, &repo_url, &state).await {
         Ok(c) => c,
@@ -86,8 +91,10 @@ async fn create_overviews(
     Path(repo): Path<String>,
     State(state): State<AppState>,
 ) -> Result<Json<CreateResponse>, StatusCode> {
+    let repo = repo.trim_start_matches('/');
     let repo_url = format!("https://github.com/{}.git", repo);
-    let result = process_missing_overviews(&repo, &repo_url, &state).await
+    let result = process_missing_overviews(&repo, &repo_url, &state)
+        .await
         .map_err(|e| {
             error!("Error creating overviews for {}: {}", repo, e);
             StatusCode::INTERNAL_SERVER_ERROR
@@ -97,11 +104,13 @@ async fn create_overviews(
 }
 
 async fn get_overview(
-    Path((repo, commit)): Path<(String, String)>,
+    Path((commit, repo)): Path<(String, String)>,
     State(state): State<AppState>,
 ) -> Result<Json<OverviewResponse>, StatusCode> {
+    let repo = repo.trim_start_matches('/');
     let repo_url = format!("https://github.com/{}.git", repo);
-    let sch = retrieve_schematic(&state, &repo_url, &commit).await
+    let sch = retrieve_schematic(&state, &repo_url, &commit)
+        .await
         .map_err(|e| {
             error!("Error retrieving overview for {}/{}: {}", repo, commit, e);
             StatusCode::INTERNAL_SERVER_ERROR
@@ -117,8 +126,8 @@ async fn get_overview(
 // Helper to fetch or clone repo using spawn_blocking for sync git2
 async fn get_git_repo(repo_slug: &str) -> anyhow::Result<Repository> {
     let repo_slug = repo_slug.to_string();
-    let cache_path = std::env::temp_dir()
-        .join(format!("kicad-cache-{}", repo_slug.replace('/', "-")));
+    let cache_path =
+        std::env::temp_dir().join(format!("kicad-cache-{}", repo_slug.replace('/', "-")));
 
     let repo = tokio::task::spawn_blocking(move || -> anyhow::Result<Repository> {
         if !cache_path.exists() {
@@ -138,46 +147,58 @@ async fn get_git_repo(repo_slug: &str) -> anyhow::Result<Repository> {
             info!("Updated repo {} from cache {:?}", repo_slug, cache_path);
             Ok(repo)
         }
-    }).await??;
+    })
+    .await??;
 
     Ok(repo)
 }
 
 // Fetch commits that affect .kicad_sch files, with DB overviews
-async fn fetch_relevant_commits(repo_slug: &str, repo_url: &str, pool: &PgPool) -> anyhow::Result<Vec<CommitResponse>> {
+async fn fetch_relevant_commits(
+    repo_slug: &str,
+    repo_url: &str,
+    pool: &PgPool,
+) -> anyhow::Result<Vec<CommitResponse>> {
     let git_repo = get_git_repo(repo_slug).await?;
 
-    let commits: Vec<CommitResponse> = tokio::task::spawn_blocking(move || -> anyhow::Result<Vec<CommitResponse>> {
-        let mut revwalk = git_repo.revwalk()?;
-        revwalk.set_sorting(git2::Sort::TOPOLOGICAL | git2::Sort::REVERSE);
-        revwalk.push_head()?;
+    let commits: Vec<CommitResponse> =
+        tokio::task::spawn_blocking(move || -> anyhow::Result<Vec<CommitResponse>> {
+            let mut revwalk = git_repo.revwalk()?;
+            revwalk.set_sorting(git2::Sort::TOPOLOGICAL | git2::Sort::REVERSE);
+            revwalk.push_head()?;
 
-        let mut res = Vec::new();
-        let mut revwalk = git_repo.revwalk()?;
-        revwalk.set_sorting(git2::Sort::TOPOLOGICAL | git2::Sort::REVERSE);
-        revwalk.push_head()?;
+            let mut res = Vec::new();
+            let mut revwalk = git_repo.revwalk()?;
+            revwalk.set_sorting(git2::Sort::TOPOLOGICAL | git2::Sort::REVERSE);
+            revwalk.push_head()?;
 
-        for oid in revwalk {
-            let oid = oid.map_err(|e| anyhow::anyhow!(e))?;
-            let commit = git_repo.find_commit(oid).map_err(|e| anyhow::anyhow!(e))?;
-            let has_sch_change = has_schematic_changes(&git_repo, &commit)?;
+            for oid in revwalk {
+                let oid = oid.map_err(|e| anyhow::anyhow!(e))?;
+                let commit = git_repo.find_commit(oid).map_err(|e| anyhow::anyhow!(e))?;
+                let has_sch_change = has_schematic_changes(&git_repo, &commit)?;
 
-            if has_sch_change {
-                let commit_hash = commit.id().to_string();
-                let commit_date = Some(chrono::Utc.timestamp_opt(commit.time().seconds(), 0).single().unwrap_or(chrono::Utc::now()));
-                let git_message = commit.summary().map(ToString::to_string);
+                if has_sch_change {
+                    let commit_hash = commit.id().to_string();
+                    let commit_date = Some(
+                        chrono::Utc
+                            .timestamp_opt(commit.time().seconds(), 0)
+                            .single()
+                            .unwrap_or(chrono::Utc::now()),
+                    );
+                    let git_message = commit.summary().map(ToString::to_string);
 
-                res.push(CommitResponse {
-                    commit_hash,
-                    commit_date,
-                    git_message,
-                    blurb: None,
-                    description: None,
-                });
+                    res.push(CommitResponse {
+                        commit_hash,
+                        commit_date,
+                        git_message,
+                        blurb: None,
+                        description: None,
+                    });
+                }
             }
-        }
-        Ok(res)
-    }).await??;
+            Ok(res)
+        })
+        .await??;
 
     // Now, for each commit, query DB to fill blurb/desc
     let mut filled_commits = Vec::new();
@@ -237,7 +258,11 @@ fn has_schematic_changes(repo: &Repository, commit: &Commit) -> anyhow::Result<b
 }
 
 // Process missing overviews
-async fn process_missing_overviews(repo_slug: &str, repo_url: &str, pool: &PgPool) -> anyhow::Result<CreateResponse> {
+async fn process_missing_overviews(
+    repo_slug: &str,
+    repo_url: &str,
+    pool: &PgPool,
+) -> anyhow::Result<CreateResponse> {
     let git_repo = get_git_repo(repo_slug).await?;
 
     let mut processed = 0;
@@ -258,12 +283,19 @@ async fn process_missing_overviews(repo_slug: &str, repo_url: &str, pool: &PgPoo
             }
         }
         Ok(hashes)
-    }).await??;
+    })
+    .await??;
 
     for commit_hash in relevant_hashes {
         let sch_opt = retrieve_schematic(pool, repo_url, &commit_hash).await?;
-        if sch_opt.as_ref().map(|s| s.blurb.is_none() || s.description.is_none()).unwrap_or(true) {
-            if let Err(e) = generate_and_store_overview(repo_slug, repo_url, &commit_hash, pool).await {
+        if sch_opt
+            .as_ref()
+            .map(|s| s.blurb.is_none() || s.description.is_none())
+            .unwrap_or(true)
+        {
+            if let Err(e) =
+                generate_and_store_overview(repo_slug, repo_url, &commit_hash, pool).await
+            {
                 errors.push(format!("Commit {}: {}", commit_hash, e));
             } else {
                 processed += 1;
@@ -283,13 +315,19 @@ async fn generate_and_store_overview(
 ) -> anyhow::Result<()> {
     let repo_slug = repo_slug.to_string();
     let commit_hash_owned = commit_hash.to_string();
-    let (blurb, description, commit_date, git_message_str) = tokio::task::spawn_blocking(move || -> anyhow::Result<(String, String, Option<DateTime<Utc>>, Option<String>)> {
-            let cache_path = std::env::temp_dir()
-                .join(format!("kicad-cache-{}", repo_slug.replace('/', "-")));
+    let (blurb, description, commit_date, git_message_str) = tokio::task::spawn_blocking(
+        move || -> anyhow::Result<(String, String, Option<DateTime<Utc>>, Option<String>)> {
+            let cache_path =
+                std::env::temp_dir().join(format!("kicad-cache-{}", repo_slug.replace('/', "-")));
             let git_repo = Repository::open(&cache_path)?;
             let commit_oid = git_repo.revparse_single(&commit_hash_owned)?;
             let commit = git_repo.find_commit(commit_oid.id())?;
-            let commit_date = Some(chrono::Utc.timestamp_opt(commit.time().seconds(), 0).single().unwrap_or(chrono::Utc::now()));
+            let commit_date = Some(
+                chrono::Utc
+                    .timestamp_opt(commit.time().seconds(), 0)
+                    .single()
+                    .unwrap_or(chrono::Utc::now()),
+            );
             let git_message = commit.summary().map(|s| s.to_string());
 
             let mut changed_files: Vec<(Option<String>, String, String)> = Vec::new();
@@ -298,11 +336,16 @@ async fn generate_and_store_overview(
                 let tree2 = commit.tree()?;
                 let diff = git_repo.diff_tree_to_tree(Some(&tree1), Some(&tree2), None)?;
                 for delta in diff.deltas() {
-                    let new_path_opt = delta.new_file().path().and_then(|p| p.to_str().map(ToString::to_string));
+                    let new_path_opt = delta
+                        .new_file()
+                        .path()
+                        .and_then(|p| p.to_str().map(ToString::to_string));
                     if let Some(new_path) = new_path_opt {
                         if new_path.ends_with(".kicad_sch") {
                             let before_opt = delta.old_file().path().and_then(|old_p| {
-                                old_p.to_str().and_then(|s| get_file_content(&git_repo, &tree1, s).ok())
+                                old_p
+                                    .to_str()
+                                    .and_then(|s| get_file_content(&git_repo, &tree1, s).ok())
                             });
                             let after_opt = get_file_content(&git_repo, &tree2, &new_path).ok();
                             if let Some(after) = after_opt {
@@ -319,7 +362,8 @@ async fn generate_and_store_overview(
                         if name.ends_with(".kicad_sch") {
                             if let Ok(obj) = entry.to_object(&git_repo) {
                                 if let Ok(blob) = obj.into_blob() {
-                                    let content = String::from_utf8_lossy(blob.content()).to_string();
+                                    let content =
+                                        String::from_utf8_lossy(blob.content()).to_string();
                                     cf.push((None, content, name.to_string()));
                                 }
                             }
@@ -330,10 +374,12 @@ async fn generate_and_store_overview(
                 changed_files = cf;
             }
 
-            let (blurb, description) = generate_commit_overview(&changed_files, commit.summary().unwrap_or(""));
+            let (blurb, description) =
+                generate_commit_overview(&changed_files, commit.summary().unwrap_or(""));
             Ok((blurb, description, commit_date, git_message))
-        }
-    ).await??;
+        },
+    )
+    .await??;
 
     let empty_parts = HashMap::new();
     store_schematic(
@@ -348,11 +394,10 @@ async fn generate_and_store_overview(
         Some(&blurb),
         Some(&description),
         empty_parts,
-    ).await?;
+    )
+    .await?;
 
     Ok(())
-
-
 }
 
 fn generate_commit_overview(
@@ -363,7 +408,11 @@ fn generate_commit_overview(
     // For now, placeholder
     let num_files = changed_files.len();
     let blurb = if num_files > 0 {
-        format!("Schematic changes in {} file(s): {}", num_files, commit_msg.split(' ').next().unwrap_or("Update"))
+        format!(
+            "Schematic changes in {} file(s): {}",
+            num_files,
+            commit_msg.split(' ').next().unwrap_or("Update")
+        )
     } else {
         "Initial schematic commit".to_string()
     };
@@ -373,18 +422,28 @@ fn generate_commit_overview(
         desc.push_str(", ");
     }
     if let Some((before, after, _)) = changed_files.first() {
-        desc.push_str(&format!("\nExample diff lines: {} -> {}",
-            before.as_ref().map(|b| b.lines().count()).unwrap_or(0), after.lines().count()));
+        desc.push_str(&format!(
+            "\nExample diff lines: {} -> {}",
+            before.as_ref().map(|b| b.lines().count()).unwrap_or(0),
+            after.lines().count()
+        ));
         // Could add simple diff here
     }
-    desc.pop(); desc.pop(); // trim ", "
+    desc.pop();
+    desc.pop(); // trim ", "
     (blurb, desc)
 }
 
 fn get_file_content(repo: &Repository, tree: &git2::Tree, path: &str) -> anyhow::Result<String> {
-    let entry = tree.get_path(std::path::Path::new(path)).map_err(|e| anyhow::anyhow!("Entry not found {}: {}", path, e))?;
-    let obj = entry.to_object(repo).map_err(|e| anyhow::anyhow!("Object not found {}: {}", path, e))?;
-    let blob = obj.into_blob().map_err(|_| anyhow::anyhow!("Not a blob {}", path))?;
+    let entry = tree
+        .get_path(std::path::Path::new(path))
+        .map_err(|e| anyhow::anyhow!("Entry not found {}: {}", path, e))?;
+    let obj = entry
+        .to_object(repo)
+        .map_err(|e| anyhow::anyhow!("Object not found {}: {}", path, e))?;
+    let blob = obj
+        .into_blob()
+        .map_err(|_| anyhow::anyhow!("Not a blob {}", path))?;
     Ok(String::from_utf8_lossy(blob.content()).to_string())
 }
 
