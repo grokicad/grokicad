@@ -163,6 +163,30 @@ pub struct GrokRepoSummaryResponse {
 }
 
 // ============================================================================
+// Distill Endpoint Types
+// ============================================================================
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct DistillRequest {
+    /// GitHub repository in "owner/repo" format
+    pub repo: String,
+    /// Full commit hash
+    pub commit: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct DistillResponse {
+    /// GitHub repository in "owner/repo" format
+    pub repo: String,
+    /// Full commit hash
+    pub commit: String,
+    /// Whether the result was served from cache
+    pub cached: bool,
+    /// Distilled schematic data (JSON object with components, nets, proximities)
+    pub distilled: serde_json::Value,
+}
+
+// ============================================================================
 // Error Types
 // ============================================================================
 

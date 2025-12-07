@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS schematics (
     project_overview TEXT,
     blurb TEXT,
     description TEXT,
+    distilled_json JSONB,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 

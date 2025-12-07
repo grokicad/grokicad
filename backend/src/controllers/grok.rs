@@ -50,7 +50,10 @@ pub async fn summarize_commit(
         error!("Failed to load environment file: {}", e);
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ApiError::internal(format!("Failed to load environment: {}", e))),
+            Json(ApiError::internal(format!(
+                "Failed to load environment: {}",
+                e
+            ))),
         )
     })?;
 
@@ -59,19 +62,21 @@ pub async fn summarize_commit(
         error!("Failed to create XAI client: {}", e);
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ApiError::internal(format!("Failed to initialize XAI client: {}", e))),
+            Json(ApiError::internal(format!(
+                "Failed to initialize XAI client: {}",
+                e
+            ))),
         )
     })?;
 
     // Construct GitHub commit URL
     let github_url = format!("https://github.com/{}/commit/{}", req.repo, req.commit);
-    
+
     // Create user message with GitHub URL
     let user_message = format!(
         "Search online for the changes in the commit {} and summarize the changes",
         github_url
     );
-
 
     // Create input message for responses API
     let input = vec![InputMessage::user(user_message)];
@@ -80,21 +85,22 @@ pub async fn summarize_commit(
     let tools = vec![Tool::web_search(), Tool::x_search()];
 
     // Create responses request with hardcoded model
-    let responses_request = ResponsesRequest::new(
-        "grok-4-1-fast".to_string(),
-        input,
-        tools,
-    );
+    let responses_request = ResponsesRequest::new("grok-4-1-fast".to_string(), input, tools);
 
     // Make API call using responses endpoint
-    let api_response = xai_client.responses(&responses_request).await.map_err(|e| {
-        error!("XAI API call failed: {}", e);
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ApiError::internal(format!("Failed to get AI summary: {}", e))),
-        )
-    })?;
-
+    let api_response = xai_client
+        .responses(&responses_request)
+        .await
+        .map_err(|e| {
+            error!("XAI API call failed: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiError::internal(format!(
+                    "Failed to get AI summary: {}",
+                    e
+                ))),
+            )
+        })?;
 
     // TODO: Implement this or not.
     // Get changed files for context
@@ -110,13 +116,12 @@ pub async fn summarize_commit(
     //         )
     //     })?;
 
-
     // Extract response content from tool results
     // The responses API returns tool call results, so we need to extract meaningful information
     let summary = if let Some(output) = &api_response.output {
         // Try to extract text from tool results
         let mut result_parts = Vec::new();
-        
+
         for item in output {
             if let Some(name) = &item.name {
                 result_parts.push(format!("Tool: {}", name));
@@ -125,13 +130,19 @@ pub async fn summarize_commit(
                 result_parts.push(format!("Status: {}", status));
             }
             if let Some(result) = &item.result {
-                result_parts.push(format!("Result: {}", serde_json::to_string(result).unwrap_or_else(|_| "N/A".to_string())));
+                result_parts.push(format!(
+                    "Result: {}",
+                    serde_json::to_string(result).unwrap_or_else(|_| "N/A".to_string())
+                ));
             }
             if let Some(content) = &item.content {
-                result_parts.push(format!("Content: {}", serde_json::to_string(content).unwrap_or_else(|_| "N/A".to_string())));
+                result_parts.push(format!(
+                    "Content: {}",
+                    serde_json::to_string(content).unwrap_or_else(|_| "N/A".to_string())
+                ));
             }
         }
-        
+
         if result_parts.is_empty() {
             format!(
                 "Found {} tool result(s) for commit {}/{}",
@@ -143,11 +154,7 @@ pub async fn summarize_commit(
             result_parts.join("\n")
         }
     } else {
-        format!(
-            "No results returned for commit {}/{}",
-            req.repo,
-            req.commit
-        )
+        format!("No results returned for commit {}/{}", req.repo, req.commit)
     };
 
     // For details, include more information about the response
@@ -163,7 +170,6 @@ pub async fn summarize_commit(
         "Successfully generated summary for {}/{}",
         req.repo, req.commit
     );
-
 
     // Mock response - TODO: integrate with actual Grok API
     // let summary = format!(
@@ -375,7 +381,8 @@ pub async fn chat_stream(
     ];
 
     // Create chat completion request with streaming
-    let chat_request = ChatCompletionRequest::with_stream(messages, "grok-3-fast".to_string(), true);
+    let chat_request =
+        ChatCompletionRequest::with_stream(messages, "grok-3-fast".to_string(), true);
 
     // Get the stream
     let stream = xai_client

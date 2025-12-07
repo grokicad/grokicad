@@ -25,6 +25,7 @@ pub struct Schematic {
     pub project_overview: Option<String>,
     pub blurb: Option<String>,
     pub description: Option<String>,
+    pub distilled_json: Option<Value>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -48,6 +49,7 @@ pub struct FullSchematic {
     pub project_overview: Option<String>,
     pub blurb: Option<String>,
     pub description: Option<String>,
+    pub distilled_json: Option<Value>,
     pub created_at: DateTime<Utc>,
     pub parts: HashMap<Uuid, FullPart>,
 }
@@ -169,9 +171,54 @@ pub async fn retrieve_schematic(
         project_overview: sch.project_overview,
         blurb: sch.blurb,
         description: sch.description,
+        distilled_json: sch.distilled_json,
         created_at: sch.created_at,
         parts: parts_map,
     }))
+}
+
+/// Store distilled JSON for a repo/commit pair
+pub async fn store_distilled_json(
+    pool: &PgPool,
+    repo_url: &str,
+    commit_hash: &str,
+    distilled_json: &Value,
+) -> Result<(), Error> {
+    sqlx::query(
+        r#"
+        INSERT INTO schematics (repo_url, commit_hash, distilled_json)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (repo_url, commit_hash) DO UPDATE SET
+            distilled_json = EXCLUDED.distilled_json
+        "#,
+    )
+    .bind(repo_url)
+    .bind(commit_hash)
+    .bind(distilled_json)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+/// Retrieve distilled JSON for a repo/commit pair
+pub async fn retrieve_distilled_json(
+    pool: &PgPool,
+    repo_url: &str,
+    commit_hash: &str,
+) -> Result<Option<Value>, Error> {
+    let row = sqlx::query(
+        "SELECT distilled_json FROM schematics WHERE repo_url = $1 AND commit_hash = $2",
+    )
+    .bind(repo_url)
+    .bind(commit_hash)
+    .fetch_optional(pool)
+    .await?;
+
+    match row {
+        Some(row) => Ok(row.try_get("distilled_json")?),
+        None => Ok(None),
+    }
 }
 
 // Additional query: e.g., get schematics by part_uuid across commits

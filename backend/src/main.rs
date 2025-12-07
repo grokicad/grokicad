@@ -29,6 +29,7 @@ async fn main() -> anyhow::Result<()> {
         .nest("/api/repo", routes::repo::router())
         .nest("/api/hook", routes::hook::router())
         .nest("/api/grok", routes::grok::router())
+        .nest("/api/distill", routes::distill::router())
         .layer(tower_http::trace::TraceLayer::new_for_http())
         .layer(tower_http::cors::CorsLayer::permissive())
         .with_state(app_state);

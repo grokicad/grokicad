@@ -1,12 +1,12 @@
 use utoipa::OpenApi;
 
-use crate::controllers::{grok, hook, repo};
+use crate::controllers::{distill, grok, hook, repo};
 use crate::types::{
     ApiError, CommitFilesRequest, CommitFilesResponse, CommitInfo, CommitInfoRequest,
-    CommitInfoResponse, GrokCommitSummaryRequest, GrokCommitSummaryResponse,
-    GrokRepoSummaryRequest, GrokRepoSummaryResponse, GrokSelectionSummaryRequest,
-    GrokSelectionSummaryResponse, HookUpdateResponse, RepoCommitsRequest, RepoCommitsResponse,
-    SchematicFile,
+    CommitInfoResponse, DistillRequest, DistillResponse, GrokCommitSummaryRequest,
+    GrokCommitSummaryResponse, GrokRepoSummaryRequest, GrokRepoSummaryResponse,
+    GrokSelectionSummaryRequest, GrokSelectionSummaryResponse, HookUpdateResponse,
+    RepoCommitsRequest, RepoCommitsResponse, SchematicFile,
 };
 
 #[derive(OpenApi)]
@@ -27,6 +27,7 @@ use crate::types::{
         grok::summarize_selection,
         grok::summarize_repo,
         grok::chat_stream,
+        distill::distill_schematics,
     ),
     components(schemas(
         RepoCommitsRequest,
@@ -44,12 +45,15 @@ use crate::types::{
         GrokSelectionSummaryResponse,
         GrokRepoSummaryRequest,
         GrokRepoSummaryResponse,
+        DistillRequest,
+        DistillResponse,
         ApiError,
     )),
     tags(
         (name = "repo", description = "Repository and commit information endpoints"),
         (name = "hook", description = "Webhook endpoints for triggering updates"),
-        (name = "grok", description = "AI-powered analysis endpoints (mock)")
+        (name = "grok", description = "AI-powered analysis endpoints"),
+        (name = "distill", description = "Schematic distillation endpoints")
     )
 )]
 pub struct ApiDoc;
