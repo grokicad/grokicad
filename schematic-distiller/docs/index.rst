@@ -18,6 +18,7 @@ KiCAD Schematic Manipulation Library
    :caption: User Guide
 
    API_REFERENCE
+   DISTILL_FEATURES
    RECIPES
    HIERARCHY_FEATURES
    ORTHOGONAL_ROUTING

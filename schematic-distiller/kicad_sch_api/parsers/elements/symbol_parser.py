@@ -31,6 +31,7 @@ class SymbolParser(BaseElementParser):
                 "lib_id": None,
                 "position": Point(0, 0),
                 "rotation": 0,
+                "mirror": None,
                 "uuid": None,
                 "reference": None,
                 "value": None,
@@ -61,6 +62,9 @@ class SymbolParser(BaseElementParser):
                         symbol_data["position"] = Point(float(sub_item[1]), float(sub_item[2]))
                         if len(sub_item) > 3:
                             symbol_data["rotation"] = float(sub_item[3])
+                elif element_type == "mirror":
+                    if len(sub_item) > 1:
+                        symbol_data["mirror"] = str(sub_item[1])
                 elif element_type == "uuid":
                     symbol_data["uuid"] = sub_item[1] if len(sub_item) > 1 else None
                 elif element_type == "unit":
@@ -381,6 +385,11 @@ class SymbolParser(BaseElementParser):
         r = int(rotation) if rotation == int(rotation) else rotation
         # Always include rotation for format consistency with KiCAD
         sexp.append([sexpdata.Symbol("at"), x, y, r])
+
+        # Add mirror flag if present
+        mirror_axis = symbol_data.get("mirror")
+        if mirror_axis:
+            sexp.append([sexpdata.Symbol("mirror"), sexpdata.Symbol(str(mirror_axis))])
 
         # Add unit (required by KiCAD)
         unit = symbol_data.get("unit", 1)

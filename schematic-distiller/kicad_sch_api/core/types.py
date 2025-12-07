@@ -218,6 +218,7 @@ class SchematicSymbol:
     pin_uuids: Dict[str, str] = field(default_factory=dict)  # Maps pin number to UUID
     hidden_properties: "set[str]" = field(default_factory=set)  # Properties with (hide yes) flag
     rotation: float = 0.0
+    mirror: Optional[str] = None  # "x", "y", or None
     in_bom: bool = True
     on_board: bool = True
     fields_autoplaced: bool = False
@@ -258,28 +259,19 @@ class SchematicSymbol:
             Absolute position of the pin in schematic coordinates, or None if pin not found
 
         Note:
-            Applies standard 2D rotation matrix to transform pin position from
-            symbol's local coordinate system to schematic's global coordinate system.
+            Uses the same transformation logic as connectivity analysis
+            (rotation + mirror + KiCad Y-inversion).
         """
-        import math
+        from .geometry import apply_transformation
 
         pin = self.get_pin(pin_number)
         if not pin:
             return None
 
-        # Apply rotation transformation using standard 2D rotation matrix
-        # [x'] = [cos(θ)  -sin(θ)] [x]
-        # [y']   [sin(θ)   cos(θ)] [y]
-        angle_rad = math.radians(self.rotation)
-        cos_a = math.cos(angle_rad)
-        sin_a = math.sin(angle_rad)
-
-        # Rotate pin position from symbol's local coordinates
-        rotated_x = pin.position.x * cos_a - pin.position.y * sin_a
-        rotated_y = pin.position.x * sin_a + pin.position.y * cos_a
-
-        # Add to component position to get absolute position
-        return Point(self.position.x + rotated_x, self.position.y + rotated_y)
+        abs_pos = apply_transformation(
+            (pin.position.x, pin.position.y), self.position, self.rotation, self.mirror
+        )
+        return Point(abs_pos[0], abs_pos[1])
 
     def get_property_effects(self, property_name: str) -> Dict[str, Any]:
         """

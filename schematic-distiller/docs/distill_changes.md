@@ -17,4 +17,5 @@ Summary of recent updates to the distillation output and proximities.
 
 ## Notes
 - Tests were not re-run here because the environment lacked the `sexpdata` dependency; run `python -m pytest tests/unit/test_distill.py` after installing it to verify locally.
+- See `DISTILL_FEATURES.md` for the complete distillation pipeline guide and usage examples.
 

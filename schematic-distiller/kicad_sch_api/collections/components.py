@@ -151,6 +151,19 @@ class Component:
         self._collection._mark_modified()
 
     @property
+    def mirror(self) -> Optional[str]:
+        """Component mirror axis ('x', 'y', or None)."""
+        return getattr(self._data, "mirror", None)
+
+    @mirror.setter
+    def mirror(self, value: Optional[str]):
+        """Set component mirror axis."""
+        if value not in (None, "x", "y"):
+            raise ValueError(f"Mirror must be 'x', 'y', or None, got {value}")
+        self._data.mirror = value
+        self._collection._mark_modified()
+
+    @property
     def lib_id(self) -> str:
         """Library identifier (e.g., 'Device:R')."""
         return self._data.lib_id
@@ -630,6 +643,7 @@ class Component:
             "footprint": self.footprint,
             "position": {"x": self.position.x, "y": self.position.y},
             "rotation": self.rotation,
+            "mirror": self.mirror,
             "properties": self.properties.copy(),
             "in_bom": self.in_bom,
             "on_board": self.on_board,

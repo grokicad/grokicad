@@ -98,7 +98,7 @@ def apply_transformation(
         x = -x
         logger.debug(f"After X mirror: ({x}, {y})")
     elif mirror == "y":
-        y = -y
+        x = -x
         logger.debug(f"After Y mirror: ({x}, {y})")
 
     # Apply rotation
